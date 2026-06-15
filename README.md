@@ -1,5 +1,8 @@
 # dev-forge ⚒️
 
+[![Test](https://github.com/ktakada42/dev-forge/actions/workflows/test.yml/badge.svg)](https://github.com/ktakada42/dev-forge/actions/workflows/test.yml)
+[![codecov](https://codecov.io/gh/ktakada42/dev-forge/graph/badge.svg)](https://codecov.io/gh/ktakada42/dev-forge)
+
 A developer's workshop for everyday transformations — an interactive CLI REPL for common encoding, decoding, and conversion tasks.
 
 ## Installation
