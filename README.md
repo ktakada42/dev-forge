@@ -4,6 +4,18 @@ A developer's workshop for everyday transformations — an interactive CLI REPL 
 
 ## Installation
 
+### Shell script (macOS / Linux)
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ktakada42/dev-forge/main/install.sh | sh
+```
+
+Installs to `~/.local/bin` by default. Override with `INSTALL_DIR`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ktakada42/dev-forge/main/install.sh | INSTALL_DIR=/usr/local/bin sh
+```
+
 ### Homebrew (macOS)
 
 Coming soon.
