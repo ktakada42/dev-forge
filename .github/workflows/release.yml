@@ -75,3 +75,79 @@ jobs:
             *.tar.gz
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  update-homebrew:
+    name: Update Homebrew Formula
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Compute SHA256
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VER="${VERSION#v}"
+          for target in aarch64-apple-darwin x86_64-apple-darwin aarch64-unknown-linux-musl x86_64-unknown-linux-musl; do
+            sha=$(sha256sum "forge-${VERSION}-${target}.tar.gz" | awk '{print $1}')
+            key="SHA_$(echo "${target}" | tr '-' '_')"
+            echo "${key}=${sha}" >> "$GITHUB_ENV"
+          done
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+          echo "VER=${VER}"         >> "$GITHUB_ENV"
+
+      - name: Checkout tap
+        uses: actions/checkout@v4
+        with:
+          repository: ktakada42/homebrew-tap
+          token: ${{ secrets.TAP_GITHUB_TOKEN }}
+          path: homebrew-tap
+
+      - name: Update Formula
+        run: |
+          cat > homebrew-tap/Formula/forge.rb << EOF
+          class Forge < Formula
+            desc "Interactive CLI REPL for encoding, decoding, and conversion tasks"
+            homepage "https://github.com/ktakada42/dev-forge"
+            version "${VER}"
+            license "MIT"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/ktakada42/dev-forge/releases/download/${VERSION}/forge-${VERSION}-aarch64-apple-darwin.tar.gz"
+                sha256 "${SHA_aarch64_apple_darwin}"
+              else
+                url "https://github.com/ktakada42/dev-forge/releases/download/${VERSION}/forge-${VERSION}-x86_64-apple-darwin.tar.gz"
+                sha256 "${SHA_x86_64_apple_darwin}"
+              end
+            end
+
+            on_linux do
+              if Hardware::CPU.arm?
+                url "https://github.com/ktakada42/dev-forge/releases/download/${VERSION}/forge-${VERSION}-aarch64-unknown-linux-musl.tar.gz"
+                sha256 "${SHA_aarch64_unknown_linux_musl}"
+              else
+                url "https://github.com/ktakada42/dev-forge/releases/download/${VERSION}/forge-${VERSION}-x86_64-unknown-linux-musl.tar.gz"
+                sha256 "${SHA_x86_64_unknown_linux_musl}"
+              end
+            end
+
+            def install
+              bin.install "forge"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/forge --version")
+            end
+          end
+          EOF
+
+      - name: Commit and push
+        run: |
+          cd homebrew-tap
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/forge.rb
+          git commit -m "forge ${VER}"
+          git push
