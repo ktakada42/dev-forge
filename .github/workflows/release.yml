@@ -75,3 +75,55 @@ jobs:
             *.tar.gz
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  update-formula:
+    name: Update Homebrew Formula
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Update formula version and checksums
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          VERSION_NUM="${TAG#v}"
+          export SHA_AARCH64=$(sha256sum "forge-${TAG}-aarch64-apple-darwin.tar.gz" | cut -d' ' -f1)
+          export SHA_X86_64=$(sha256sum "forge-${TAG}-x86_64-apple-darwin.tar.gz" | cut -d' ' -f1)
+          export VERSION_NUM
+
+          python3 << 'PYEOF'
+import re, os
+ver = os.environ['VERSION_NUM']
+arm = os.environ['SHA_AARCH64']
+x86 = os.environ['SHA_X86_64']
+text = open('Formula/dev-forge.rb').read()
+text = re.sub(r'^\s*version "[^"]+"', f'  version "{ver}"', text, flags=re.MULTILINE)
+shas = [arm, x86]
+sha_index = 0
+def replace_sha(match):
+    global sha_index
+    replacement = f'      sha256 "{shas[sha_index]}"'
+    sha_index += 1
+    return replacement
+text = re.sub(r'^\s*sha256 "[a-fA-F0-9]+"', replace_sha, text, flags=re.MULTILINE)
+open('Formula/dev-forge.rb', 'w').write(text)
+print(f'Updated formula to version {ver}')
+PYEOF
+
+      - name: Commit and push formula update
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/dev-forge.rb
+          git diff --cached --quiet || git commit -m "chore: update Homebrew formula to ${TAG}"
+          git push origin main

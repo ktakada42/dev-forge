@@ -18,7 +18,10 @@ curl -fsSL https://raw.githubusercontent.com/ktakada42/dev-forge/main/install.sh
 
 ### Homebrew (macOS)
 
-Coming soon.
+```sh
+brew tap ktakada42/dev-forge https://github.com/ktakada42/dev-forge
+brew install dev-forge
+```
 
 ### cargo install
 
