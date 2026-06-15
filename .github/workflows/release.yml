@@ -70,6 +70,7 @@ jobs:
       - name: Create release and upload assets
         run: |
           gh release create "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
             --generate-notes \
             *.tar.gz
         env:
