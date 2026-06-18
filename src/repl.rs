@@ -16,7 +16,11 @@ enum State {
     Root,
     Timestamp,
     Base64,
+    Base64Encode,
+    Base64Decode,
     Url,
+    UrlEncode,
+    UrlDecode,
     Jwt,
 }
 
@@ -47,7 +51,12 @@ impl Hinter for ReplHelper {
             return None;
         }
         match line {
-            "/base64 " | "/url " => Some(StringHint("encode|decode|<value>".to_string())),
+            "/base64 "
+            | "/base64-encode "
+            | "/base64-decode "
+            | "/url "
+            | "/url-encode "
+            | "/url-decode " => Some(StringHint("<value>".to_string())),
             _ => None,
         }
     }
@@ -85,7 +94,11 @@ pub fn run() {
             State::Root => "forge> ",
             State::Timestamp => "forge(timestamp)> ",
             State::Base64 => "forge(base64)> ",
+            State::Base64Encode => "forge(base64-encode)> ",
+            State::Base64Decode => "forge(base64-decode)> ",
             State::Url => "forge(url)> ",
+            State::UrlEncode => "forge(url-encode)> ",
+            State::UrlDecode => "forge(url-decode)> ",
             State::Jwt => "forge(jwt)> ",
         };
 
@@ -115,8 +128,24 @@ pub fn run() {
                 state = State::Base64;
                 continue;
             }
+            "/base64-encode" => {
+                state = State::Base64Encode;
+                continue;
+            }
+            "/base64-decode" => {
+                state = State::Base64Decode;
+                continue;
+            }
             "/url" => {
                 state = State::Url;
+                continue;
+            }
+            "/url-encode" => {
+                state = State::UrlEncode;
+                continue;
+            }
+            "/url-decode" => {
+                state = State::UrlDecode;
                 continue;
             }
             "/jwt" => {
@@ -127,7 +156,10 @@ pub fn run() {
                 match state {
                     State::Root => print_root_help(),
                     State::Timestamp => print_timestamp_help(),
-                    State::Base64 | State::Url => print_encode_decode_help(),
+                    State::Base64 | State::Base64Encode | State::Base64Decode => {
+                        print_base64_help()
+                    }
+                    State::Url | State::UrlEncode | State::UrlDecode => print_url_help(),
                     State::Jwt => print_jwt_help(),
                 }
                 continue;
@@ -138,46 +170,18 @@ pub fn run() {
 
         match state {
             State::Root => match parse_root_command(&line) {
-                Some(("base64", "encode")) => {
-                    if let Some(input) = prompt_input(&mut rl) {
-                        println!("{}", tools::base64::encode(&input));
-                    } else {
-                        break;
-                    }
-                }
-                Some(("base64", "decode")) => {
-                    if let Some(input) = prompt_input(&mut rl) {
-                        match tools::base64::decode(&input) {
-                            Ok(result) => println!("{}", result),
-                            Err(e) => println!("Error: {}", e),
-                        }
-                    } else {
-                        break;
-                    }
-                }
-                Some(("url", "encode")) => {
-                    if let Some(input) = prompt_input(&mut rl) {
-                        println!("{}", tools::url::encode(&input));
-                    } else {
-                        break;
-                    }
-                }
-                Some(("url", "decode")) => {
-                    if let Some(input) = prompt_input(&mut rl) {
-                        match tools::url::decode(&input) {
-                            Ok(result) => println!("{}", result),
-                            Err(e) => println!("Error: {}", e),
-                        }
-                    } else {
-                        break;
-                    }
-                }
-                Some(("base64", value)) => {
-                    print_auto_result(tools::base64::auto(value));
-                }
-                Some(("url", value)) => {
-                    print_auto_result(tools::url::auto(value));
-                }
+                Some(("base64", value)) => print_auto_result(tools::base64::auto(value)),
+                Some(("base64-encode", value)) => println!("{}", tools::base64::encode(value)),
+                Some(("base64-decode", value)) => match tools::base64::decode(value) {
+                    Ok(result) => println!("{}", result),
+                    Err(e) => println!("Error: {}", e),
+                },
+                Some(("url", value)) => print_auto_result(tools::url::auto(value)),
+                Some(("url-encode", value)) => println!("{}", tools::url::encode(value)),
+                Some(("url-decode", value)) => match tools::url::decode(value) {
+                    Ok(result) => println!("{}", result),
+                    Err(e) => println!("Error: {}", e),
+                },
                 _ => println!("Unknown command. Type /help for usage."),
             },
             State::Timestamp => {
@@ -187,45 +191,17 @@ pub fn run() {
                     Err(e) => println!("Error: {}", e),
                 }
             }
-            State::Base64 => match line.as_str() {
-                "encode" => {
-                    if let Some(input) = prompt_input(&mut rl) {
-                        println!("{}", tools::base64::encode(&input));
-                    } else {
-                        break;
-                    }
-                }
-                "decode" => {
-                    if let Some(input) = prompt_input(&mut rl) {
-                        match tools::base64::decode(&input) {
-                            Ok(result) => println!("{}", result),
-                            Err(e) => println!("Error: {}", e),
-                        }
-                    } else {
-                        break;
-                    }
-                }
-                _ => print_auto_result(tools::base64::auto(&line)),
+            State::Base64 => print_auto_result(tools::base64::auto(&line)),
+            State::Base64Encode => println!("{}", tools::base64::encode(&line)),
+            State::Base64Decode => match tools::base64::decode(&line) {
+                Ok(result) => println!("{}", result),
+                Err(e) => println!("Error: {}", e),
             },
-            State::Url => match line.as_str() {
-                "encode" => {
-                    if let Some(input) = prompt_input(&mut rl) {
-                        println!("{}", tools::url::encode(&input));
-                    } else {
-                        break;
-                    }
-                }
-                "decode" => {
-                    if let Some(input) = prompt_input(&mut rl) {
-                        match tools::url::decode(&input) {
-                            Ok(result) => println!("{}", result),
-                            Err(e) => println!("Error: {}", e),
-                        }
-                    } else {
-                        break;
-                    }
-                }
-                _ => print_auto_result(tools::url::auto(&line)),
+            State::Url => print_auto_result(tools::url::auto(&line)),
+            State::UrlEncode => println!("{}", tools::url::encode(&line)),
+            State::UrlDecode => match tools::url::decode(&line) {
+                Ok(result) => println!("{}", result),
+                Err(e) => println!("Error: {}", e),
             },
             State::Jwt => match line.as_str() {
                 "decode" => {
@@ -295,10 +271,14 @@ fn prompt_input(rl: &mut Editor<ReplHelper, DefaultHistory>) -> Option<String> {
 
 fn print_root_help() {
     println!("Available tools:");
-    println!("  /timestamp   Unix timestamp \u{21d4} datetime conversion");
-    println!("  /base64      Base64 encode/decode");
-    println!("  /url         URL encode/decode");
-    println!("  /jwt         JWT decode");
+    println!("  /timestamp      Unix timestamp \u{21d4} datetime conversion");
+    println!("  /base64         Base64 (auto-detect encode/decode)");
+    println!("  /base64-encode  Base64 encode");
+    println!("  /base64-decode  Base64 decode");
+    println!("  /url            URL (auto-detect encode/decode)");
+    println!("  /url-encode     URL encode");
+    println!("  /url-decode     URL decode");
+    println!("  /jwt            JWT decode");
     println!();
     println!("Commands:");
     println!("  /help        Show this help");
@@ -328,16 +308,33 @@ fn print_timestamp_help() {
     println!();
 }
 
-fn print_encode_decode_help() {
-    println!("Commands:");
-    println!("  <value>   Auto-detect encode or decode");
-    println!("  encode    Force encode (prompts for input)");
-    println!("  decode    Force decode (prompts for input)");
+fn print_base64_help() {
+    println!("Usage:");
+    println!("  <value>   Encode or decode (auto-detected from input)");
+    println!();
+    println!("To force a specific operation, switch tools:");
+    println!("  /base64-encode   Always encode");
+    println!("  /base64-decode   Always decode");
     println!();
     println!("Global commands:");
-    println!("  /timestamp, /base64, /url, /jwt   Switch tool");
-    println!("  /help                              Show this help");
-    println!("  exit, quit                         Exit");
+    println!("  /timestamp, /base64, /base64-encode, /base64-decode, /url, /jwt");
+    println!("  /help        Show this help");
+    println!("  exit, quit   Exit");
+    println!();
+}
+
+fn print_url_help() {
+    println!("Usage:");
+    println!("  <value>   Encode or decode (auto-detected from input)");
+    println!();
+    println!("To force a specific operation, switch tools:");
+    println!("  /url-encode   Always encode");
+    println!("  /url-decode   Always decode");
+    println!();
+    println!("Global commands:");
+    println!("  /timestamp, /base64, /url, /url-encode, /url-decode, /jwt");
+    println!("  /help        Show this help");
+    println!("  exit, quit   Exit");
     println!();
 }
 
@@ -409,23 +406,45 @@ mod tests {
     }
 
     #[test]
-    fn root_command_base64_encode() {
-        assert_eq!(parse_root_command("/base64 encode"), Some(("base64", "encode")));
+    fn root_command_base64_value() {
+        assert_eq!(
+            parse_root_command("/base64 SGVsbG8="),
+            Some(("base64", "SGVsbG8="))
+        );
     }
 
     #[test]
-    fn root_command_url_decode() {
-        assert_eq!(parse_root_command("/url decode"), Some(("url", "decode")));
+    fn root_command_base64_encode_value() {
+        assert_eq!(
+            parse_root_command("/base64-encode hello"),
+            Some(("base64-encode", "hello"))
+        );
     }
 
     #[test]
-    fn root_command_no_subcommand() {
+    fn root_command_url_decode_value() {
+        assert_eq!(
+            parse_root_command("/url-decode hello%20world"),
+            Some(("url-decode", "hello%20world"))
+        );
+    }
+
+    #[test]
+    fn root_command_value_with_spaces() {
+        assert_eq!(
+            parse_root_command("/url-encode hello world"),
+            Some(("url-encode", "hello world"))
+        );
+    }
+
+    #[test]
+    fn root_command_no_value() {
         assert_eq!(parse_root_command("/base64"), None);
     }
 
     #[test]
     fn root_command_no_slash() {
-        assert_eq!(parse_root_command("base64 encode"), None);
+        assert_eq!(parse_root_command("base64 hello"), None);
     }
 
     #[test]
