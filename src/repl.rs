@@ -47,7 +47,7 @@ impl Hinter for ReplHelper {
             return None;
         }
         match line {
-            "/base64 " | "/url " => Some(StringHint("encode|decode".to_string())),
+            "/base64 " | "/url " => Some(StringHint("encode|decode|<value>".to_string())),
             _ => None,
         }
     }
@@ -172,6 +172,12 @@ pub fn run() {
                         break;
                     }
                 }
+                Some(("base64", value)) => {
+                    print_auto_result(tools::base64::auto(value));
+                }
+                Some(("url", value)) => {
+                    print_auto_result(tools::url::auto(value));
+                }
                 _ => println!("Unknown command. Type /help for usage."),
             },
             State::Timestamp => {
@@ -199,7 +205,7 @@ pub fn run() {
                         break;
                     }
                 }
-                _ => println!("Unknown command. Type /help for usage."),
+                _ => print_auto_result(tools::base64::auto(&line)),
             },
             State::Url => match line.as_str() {
                 "encode" => {
@@ -219,7 +225,7 @@ pub fn run() {
                         break;
                     }
                 }
-                _ => println!("Unknown command. Type /help for usage."),
+                _ => print_auto_result(tools::url::auto(&line)),
             },
             State::Jwt => match line.as_str() {
                 "decode" => {
@@ -263,6 +269,15 @@ fn parse_timestamp_line(line: &str) -> (&str, Option<&str>) {
             let last_space = line.trim_end().rfind(' ').unwrap();
             (line[..last_space].trim(), Some(line[last_space + 1..].trim()))
         }
+    }
+}
+
+fn print_auto_result(op_result: (&'static str, Result<String, String>)) {
+    let (op, result) = op_result;
+    println!("\x1b[2m[auto: {}]\x1b[0m", op);
+    match result {
+        Ok(output) => println!("{}", output),
+        Err(e) => println!("Error: {}", e),
     }
 }
 
@@ -315,8 +330,9 @@ fn print_timestamp_help() {
 
 fn print_encode_decode_help() {
     println!("Commands:");
-    println!("  encode   Encode string");
-    println!("  decode   Decode string");
+    println!("  <value>   Auto-detect encode or decode");
+    println!("  encode    Force encode (prompts for input)");
+    println!("  decode    Force decode (prompts for input)");
     println!();
     println!("Global commands:");
     println!("  /timestamp, /base64, /url, /jwt   Switch tool");
