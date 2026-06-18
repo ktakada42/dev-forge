@@ -8,6 +8,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -24,3 +26,4 @@ jobs:
         with:
           files: lcov.info
           fail_ci_if_error: true
+          use_oidc: true
