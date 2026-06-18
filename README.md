@@ -61,8 +61,12 @@ forge
 | Command | Description |
 |---|---|
 | `/timestamp` | Switch to timestamp tool |
-| `/base64` | Switch to Base64 tool |
-| `/url` | Switch to URL tool |
+| `/base64` | Switch to Base64 tool (auto-detect encode/decode) |
+| `/base64-encode` | Switch to Base64 encode |
+| `/base64-decode` | Switch to Base64 decode |
+| `/url` | Switch to URL tool (auto-detect encode/decode) |
+| `/url-encode` | Switch to URL encode |
+| `/url-decode` | Switch to URL decode |
 | `/jwt` | Switch to JWT tool |
 | `/help` | Show help for the current tool |
 | `exit` / `quit` | Exit dev-forge |
@@ -94,31 +98,65 @@ Millisecond timestamps are auto-detected.
 
 ### Base64
 
+`/base64` auto-detects whether to encode or decode based on the input value.
+
 ```
 forge> /base64
-forge(base64)> encode
-Input:
-hello
+forge(base64)> hello
+[auto: encode]
 aGVsbG8=
 
-forge(base64)> decode
-Input:
-aGVsbG8=
+forge(base64)> aGVsbG8=
+[auto: decode]
 hello
 ```
+
+You can also pass the value inline from the root prompt:
+
+```
+forge> /base64 aGVsbG8=
+[auto: decode]
+hello
+```
+
+To force a specific operation, use `/base64-encode` or `/base64-decode`:
+
+```
+forge> /base64-encode
+forge(base64-encode)> hello
+aGVsbG8=
+
+forge> /base64-decode
+forge(base64-decode)> aGVsbG8=
+hello
+```
+
+**Note on auto-detection:** `/base64` infers decode by attempting to base64-decode the input and checking whether the result is valid UTF-8 text. This works well for the common case of encoding and decoding text. However, if the base64 input encodes binary data (e.g. images, encrypted bytes), the decoded bytes are likely not valid UTF-8, and auto-detection will incorrectly treat the input as plain text to encode. Use `/base64-decode` explicitly in those cases.
 
 ### URL
 
+`/url` auto-detects whether to encode or decode. Decode is chosen when the input contains at least one percent-encoded sequence (`%XX`).
+
 ```
 forge> /url
-forge(url)> encode
-Input:
-hello world
+forge(url)> hello world
+[auto: encode]
 hello%20world
 
-forge(url)> decode
-Input:
+forge(url)> hello%20world
+[auto: decode]
+hello world
+```
+
+To force a specific operation, use `/url-encode` or `/url-decode`:
+
+```
+forge> /url-encode
+forge(url-encode)> hello world
 hello%20world
+
+forge> /url-decode
+forge(url-decode)> hello%20world
 hello world
 ```
 
