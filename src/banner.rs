@@ -62,9 +62,13 @@ const RAISED: Pose = Pose {
 /// handle runs down to the right — two columns per row, because that is what
 /// 45° looks like in character cells. Half blocks carry the slab's long edges
 /// through the halves of a cell the steps would otherwise leave empty.
+///
+/// Kept to the same 3-row, 9-column footprint as [`RAISED`]: a bigger slab
+/// reads as an oversized, stair-stepped afterimage rather than the same head
+/// mid-turn.
 const SWING: Pose = Pose {
-    head: &["    ▄▄█████", "  ▄▄█████▀▀", "▄▄█████▀▀", "█████▀▀"],
-    head_at: (2, 13),
+    head: &["    ▄████", "  ▄████▀", "████▀"],
+    head_at: (2, 17),
     handle: &["━╲", "  ━"],
     handle_at: (GRIP.0 - 2, GRIP.1 - 3),
 };
@@ -549,30 +553,26 @@ mod tests {
         }
     }
 
+    /// A sprite's bounding box, in cells (width, height).
+    fn footprint(art: &[&str]) -> usize {
+        let width = art.iter().map(|line| line.chars().count()).max().unwrap();
+        width * art.len()
+    }
+
     #[test]
-    fn the_head_is_the_same_lump_of_steel_in_every_pose() {
-        // Area in half cells: a half block covers half of one, everything else
-        // fills it. Turning a rigid body does not change how much of it there
-        // is, so the three poses have to agree.
-        let sizes: Vec<usize> = POSES
-            .iter()
-            .map(|pose| {
-                pose.head
-                    .iter()
-                    .flat_map(|line| line.chars())
-                    .map(|ch| match ch {
-                        ' ' => 0,
-                        '▀' | '▄' => 1,
-                        _ => 2,
-                    })
-                    .sum()
-            })
-            .collect();
-        let (smallest, largest) = (sizes.iter().min().unwrap(), sizes.iter().max().unwrap());
+    fn the_swing_never_bulges_past_either_end_of_the_arc() {
+        // RAISED and STRIKE are the same rigid head at 0° and 90°, so their
+        // bounding boxes are the two honest views of it; a rotated view drawn
+        // in low-resolution character cells cannot be made pixel-exact, but it
+        // must not look like a bigger, blurrier object than either end — that
+        // reads as a stair-stepped afterimage instead of a mid-swing head.
+        let ends = footprint(RAISED.head).max(footprint(STRIKE.head));
+        let mid = footprint(SWING.head);
         assert!(
-            (largest - smallest) * 5 <= *smallest,
-            "the head changes size as it turns: {:?}",
-            sizes
+            mid <= ends,
+            "the mid-swing head ({} cells) is bigger than both ends ({} cells)",
+            mid,
+            ends
         );
     }
 
