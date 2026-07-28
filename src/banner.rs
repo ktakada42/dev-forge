@@ -1,9 +1,15 @@
 //! Startup animation for the REPL: a hammer swung down onto the anvil,
 //! throwing sparks.
 //!
-//! The hammer is held on the right, so it comes down in an arc from the upper
-//! right: head up with the handle hanging down, then diagonal, then flat on
-//! the anvil with the handle pointing right.
+//! The hammer is a rigid body turning counter-clockwise through 90° about
+//! [`GRIP`], the fixed point where the hand holds the end of the handle: head
+//! straight up, then halfway round, then down on the anvil. The head turns
+//! with it, so it is broad while the handle stands vertical and deep once the
+//! handle lies flat — one hammer, three views of it, never a different size.
+//!
+//! A terminal cell is about twice as tall as it is wide, which is why the
+//! poses look squashed on paper but read as one shape on screen: a 45° swing
+//! covers twice as many columns as rows.
 //!
 //! Every frame is composed on a fixed `WIDTH` x `HEIGHT` character canvas, so
 //! redrawing is just "move the cursor `HEIGHT` lines up and print again".
@@ -29,9 +35,13 @@ const RESET: &str = "\x1b[0m";
 // ─── sprites ───────────────────────────────────────────────────────────────
 // Spaces are transparent: they never overwrite what is already on the canvas.
 
+/// The hand: the swing turns about this cell and it never moves. Every pose's
+/// handle runs up to the cell next to it, so the grip stays put while the head
+/// swings through its arc.
+const GRIP: (usize, usize) = (6, 25);
+
 /// One hammer position: the steel head and the wooden handle, each with the
-/// canvas (row, column) its top-left corner sits at. The head's border carries
-/// the junction glyph the handle grows out of.
+/// canvas (row, column) its top-left corner sits at.
 struct Pose {
     head: &'static [&'static str],
     head_at: (usize, usize),
@@ -39,36 +49,33 @@ struct Pose {
     handle_at: (usize, usize),
 }
 
-/// Raised: head up and to the right, handle hanging down to the grip.
+/// Raised (0°): handle straight up out of the grip, broad side of the head to
+/// the viewer.
 const RAISED: Pose = Pose {
     head: &["┏━━━━━━━┓", "┃███████┃", "┗━━━┳━━━┛"],
-    head_at: (0, 19),
-    handle: &["┃", "┃", "┃"],
-    handle_at: (3, 23),
+    head_at: (1, 21),
+    handle: &["┃", "┃"],
+    handle_at: (GRIP.0 - 2, GRIP.1),
 };
 
-/// Halfway through the swing, handle at roughly 45°.
+/// Halfway round (45°): the head is a slab tilted down to the left and the
+/// handle runs down to the right — two columns per row, because that is what
+/// 45° looks like in character cells. Half blocks carry the slab's long edges
+/// through the halves of a cell the steps would otherwise leave empty.
 const SWING: Pose = Pose {
-    head: &["┏━━━━━━━┓", "┃███████┃", "┗━━━━━━━┛"],
-    head_at: (2, 16),
-    handle: &["╲", " ╲", "  ╲"],
-    handle_at: (5, 25),
+    head: &["    ▄▄█████", "  ▄▄█████▀▀", "▄▄█████▀▀", "█████▀▀"],
+    head_at: (2, 13),
+    handle: &["━╲", "  ━"],
+    handle_at: (GRIP.0 - 2, GRIP.1 - 3),
 };
 
-/// Just short of the anvil, handle flattening out.
-const FALL: Pose = Pose {
-    head: &["┏━━━━━━━┓", "┃███████┣", "┗━━━━━━━┛"],
-    head_at: (3, 14),
-    handle: &["━━╲", "   ━━"],
-    handle_at: (4, 23),
-};
-
-/// On the anvil: head flat, handle straight out to the right.
+/// On the anvil (90°): the head has turned face-down, so it now stands deep
+/// and narrow, and the handle lies flat out to the grip.
 const STRIKE: Pose = Pose {
-    head: &["┏━━━━━━━┓", "┃███████┣", "┗━━━━━━━┛"],
-    head_at: (5, 13),
-    handle: &["━━━━━━"],
-    handle_at: (6, 22),
+    head: &["┏━━━━━┓", "┃█████┃", "┃█████┣", "┗━━━━━┛"],
+    head_at: (4, 14),
+    handle: &["━━━━"],
+    handle_at: (GRIP.0, GRIP.1 - 4),
 };
 
 const ANVIL: [&str; 5] = [
@@ -258,9 +265,9 @@ struct Frame {
     sparks: &'static [Spark],
 }
 
-/// The whole animation, about 900 ms. The last frame has no delay: it is what
+/// The whole animation, about 850 ms. The last frame has no delay: it is what
 /// stays on screen.
-const STORYBOARD: [Frame; 8] = [
+const STORYBOARD: [Frame; 7] = [
     // Hammer up, waiting.
     Frame {
         delay_ms: 260,
@@ -268,16 +275,10 @@ const STORYBOARD: [Frame; 8] = [
         glow: None,
         sparks: &[],
     },
-    // Coming down, picking up speed.
+    // Coming round.
     Frame {
-        delay_ms: 70,
+        delay_ms: 60,
         pose: &SWING,
-        glow: None,
-        sparks: &[],
-    },
-    Frame {
-        delay_ms: 45,
-        pose: &FALL,
         glow: None,
         sparks: &[],
     },
@@ -401,7 +402,8 @@ pub fn animate() {
 mod tests {
     use super::*;
 
-    const POSES: [&Pose; 4] = [&RAISED, &SWING, &FALL, &STRIKE];
+    /// The poses in swing order.
+    const POSES: [&Pose; 3] = [&RAISED, &SWING, &STRIKE];
     const SPARK_GLYPHS: [char; 4] = ['✦', '✧', '·', '˙'];
 
     fn scenes() -> Vec<Canvas> {
@@ -514,6 +516,66 @@ mod tests {
         assert_eq!(STRIKE.head_at.0 + STRIKE.head.len() - 1, ANVIL_TOP - 1);
     }
 
+    /// Cells a sprite covers on the canvas.
+    fn cells_of(art: &[&str], (top, left): (usize, usize)) -> Vec<(usize, usize)> {
+        art.iter()
+            .enumerate()
+            .flat_map(|(dy, line)| {
+                line.chars()
+                    .enumerate()
+                    .filter(|(_, ch)| *ch != ' ')
+                    .map(move |(dx, _)| (top + dy, left + dx))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_swing_turns_about_the_grip() {
+        for pose in POSES {
+            let handle = cells_of(pose.handle, pose.handle_at);
+            let &(row, col) = handle.last().expect("every pose shows a handle");
+            let (grip_row, grip_col) = GRIP;
+
+            assert!(
+                row.abs_diff(grip_row) <= 1 && col.abs_diff(grip_col) <= 1,
+                "the handle ends at {:?}, away from the grip {:?}",
+                (row, col),
+                GRIP
+            );
+            assert!(
+                !cells_of(pose.head, pose.head_at).contains(&GRIP) && !handle.contains(&GRIP),
+                "the hand is not something to draw over"
+            );
+        }
+    }
+
+    #[test]
+    fn the_head_is_the_same_lump_of_steel_in_every_pose() {
+        // Area in half cells: a half block covers half of one, everything else
+        // fills it. Turning a rigid body does not change how much of it there
+        // is, so the three poses have to agree.
+        let sizes: Vec<usize> = POSES
+            .iter()
+            .map(|pose| {
+                pose.head
+                    .iter()
+                    .flat_map(|line| line.chars())
+                    .map(|ch| match ch {
+                        ' ' => 0,
+                        '▀' | '▄' => 1,
+                        _ => 2,
+                    })
+                    .sum()
+            })
+            .collect();
+        let (smallest, largest) = (sizes.iter().min().unwrap(), sizes.iter().max().unwrap());
+        assert!(
+            (largest - smallest) * 5 <= *smallest,
+            "the head changes size as it turns: {:?}",
+            sizes
+        );
+    }
+
     #[test]
     fn the_handle_is_always_held_to_the_right_of_the_head() {
         for pose in POSES {
@@ -559,8 +621,17 @@ mod tests {
             .map(|canvas| !rows_with(&canvas.render(false), &SPARK_GLYPHS).is_empty())
             .collect();
 
-        assert!(!sparky[..3].iter().any(|&s| s), "no sparks before impact");
-        assert!(sparky[3], "impact frame throws sparks");
+        // The blow lands on the first frame that heats the anvil.
+        let impact = STORYBOARD
+            .iter()
+            .position(|frame| frame.glow.is_some())
+            .expect("the hammer lands");
+
+        assert!(
+            !sparky[..impact].iter().any(|&s| s),
+            "no sparks before impact"
+        );
+        assert!(sparky[impact], "impact frame throws sparks");
         assert!(!sparky.last().unwrap(), "sparks are gone once settled");
     }
 
