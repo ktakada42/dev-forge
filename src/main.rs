@@ -7,7 +7,11 @@ use std::io::{self, IsTerminal, Read};
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "forge", about = "dev-forge: developer utility tools")]
+#[command(
+    name = "forge",
+    version,
+    about = "dev-forge: developer utility tools"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
