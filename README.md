@@ -76,14 +76,15 @@ flying — before the prompt appears:
 The hammer turns counter-clockwise through 90° about the hand, which stays put
 on the right — so the head swings down in an arc and turns face-down as it
 lands. It then disappears, leaving just the anvil — stamped with "Dev
-Forge" — standing above the prompt:
+Forge" — standing above the prompt, with the app name, version, and tagline
+set beside it:
 
 ```
-            ▄▄▄▄▄▄▄▄▄▄▄
-         ████Dev Forge████
+            ▄▄▄▄▄▄▄▄▄▄▄         Dev Forge
+         ████Dev Forge████      v0.1.0
          ▀▀▀▀▀▀█████▀▀▀▀▀▀
-               █████
-           █████████████
+               █████            A developer's workshop for
+           █████████████        everyday transformations.
 ```
 
 The animation is skipped automatically when output is not a terminal or when

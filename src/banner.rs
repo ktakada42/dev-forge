@@ -1,6 +1,9 @@
 //! Startup animation for the REPL: a hammer swung down onto the anvil,
 //! throwing sparks. The hammer then disappears, leaving the anvil — stamped
-//! with "Dev Forge" — on screen as the prompt comes up.
+//! with "Dev Forge" — on screen as the prompt comes up. The app name,
+//! version, and tagline sit to the anvil's right for the whole animation;
+//! the hammer's swing never reaches that column, so nothing is ever drawn
+//! over it.
 //!
 //! The hammer is a rigid body turning counter-clockwise through 90° about
 //! [`GRIP`], the fixed point where the hand holds the end of the handle: head
@@ -23,7 +26,7 @@ use std::io::{self, IsTerminal, Write};
 use std::thread::sleep;
 use std::time::Duration;
 
-const WIDTH: usize = 34;
+const WIDTH: usize = 60;
 const HEIGHT: usize = 13;
 
 /// Column the hammer falls on — also the center of the anvil.
@@ -32,6 +35,16 @@ const CENTER: usize = 17;
 const ANVIL_TOP: usize = 8;
 
 const RESET: &str = "\x1b[0m";
+
+// ─── side text ─────────────────────────────────────────────────────────────
+// The app name, version, and tagline, set beside the anvil. Column chosen
+// with a couple of columns of clearance past the hammer's widest reach (see
+// `the_side_text_clears_the_hammers_reach`), so it can be drawn in every
+// frame without ever worrying about what pose the hammer is in.
+
+const TEXT_LEFT: usize = 32;
+const VERSION: &str = concat!("v", env!("CARGO_PKG_VERSION"));
+const TAGLINE: [&str; 2] = ["A developer's workshop for", "everyday transformations."];
 
 // ─── sprites ───────────────────────────────────────────────────────────────
 // Spaces are transparent: they never overwrite what is already on the canvas.
@@ -109,6 +122,7 @@ enum Paint {
     Handle,
     Anvil,
     Label,
+    Caption,
     GlowHot,
     GlowWarm,
     GlowDim,
@@ -124,6 +138,7 @@ impl Paint {
             Paint::Handle => "\x1b[38;5;130m",
             Paint::Anvil => "\x1b[38;5;244m",
             Paint::Label => "\x1b[1;38;5;255m",
+            Paint::Caption => "\x1b[38;5;245m",
             Paint::GlowHot => "\x1b[1;38;5;226m",
             Paint::GlowWarm => "\x1b[38;5;208m",
             Paint::GlowDim => "\x1b[38;5;130m",
@@ -359,6 +374,10 @@ fn scene(frame: &Frame) -> Canvas {
     let label_col = band_left + (band_width - LABEL.chars().count()) / 2;
     canvas.draw_opaque(&[LABEL], ANVIL_TOP + LABEL_ROW, label_col, Paint::Label);
 
+    canvas.draw_opaque(&[LABEL], ANVIL_TOP, TEXT_LEFT, Paint::Label);
+    canvas.draw_opaque(&[VERSION], ANVIL_TOP + 1, TEXT_LEFT, Paint::Caption);
+    canvas.draw_opaque(&TAGLINE, ANVIL_TOP + 3, TEXT_LEFT, Paint::Caption);
+
     if let Some(paint) = frame.glow {
         canvas.recolor(ANVIL_TOP, CENTER - 5..=CENTER + 5, paint);
     }
@@ -540,6 +559,43 @@ mod tests {
             .render(false)
             .iter()
             .any(|line| line.contains(LABEL)));
+    }
+
+    #[test]
+    fn the_side_text_shows_in_every_frame() {
+        for canvas in scenes() {
+            let lines = canvas.render(false);
+            for text in [LABEL, VERSION, TAGLINE[0], TAGLINE[1]] {
+                assert!(
+                    lines.iter().any(|line| line.contains(text)),
+                    "{:?} is missing from a frame",
+                    text
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_side_text_clears_the_hammers_reach() {
+        // The side text is drawn in every frame regardless of the hammer's
+        // pose, so it must sit to the right of anywhere the hammer ever
+        // reaches — otherwise a swing frame would draw over it.
+        let reach = POSES
+            .iter()
+            .flat_map(|pose| {
+                cells_of(pose.head, pose.head_at)
+                    .into_iter()
+                    .chain(cells_of(pose.handle, pose.handle_at))
+            })
+            .map(|(_, col)| col)
+            .max()
+            .unwrap();
+        assert!(
+            TEXT_LEFT > reach,
+            "the hammer reaches column {}, level with or past the side text at {}",
+            reach,
+            TEXT_LEFT
+        );
     }
 
     #[test]
