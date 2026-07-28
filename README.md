@@ -60,19 +60,19 @@ The REPL opens with a short animation — a hammer striking the anvil, sparks
 flying — before the prompt appears:
 
 ```
-                 ┃
-                 ┃
-             ┏━━━┻━━━┓
-             ┃███████┃
-        ·    ┗━━━━━━━┛    ·
-          ✧            ✧
-            ✦        ✦
+                          ·
+        ·    ┏━━━━━━━┓  ✧
+          ✧  ┃███████┣━━━━━━
+            ✦┗━━━━━━━┛✦
          ·  ▄▄▄▄▄▄▄▄▄▄▄  ·
          █████████████████
          ▀▀▀▀▀▀█████▀▀▀▀▀▀
                █████
            █████████████
 ```
+
+The hammer is held on the right and comes down in an arc from the upper right,
+landing flat on the anvil.
 
 The animation is skipped automatically when output is not a terminal or when
 `TERM=dumb`. Set `FORGE_NO_ANIMATION=1` to always skip it (a still frame is

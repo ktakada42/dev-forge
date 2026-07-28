@@ -1,4 +1,9 @@
-//! Startup animation for the REPL: a hammer striking the anvil, throwing sparks.
+//! Startup animation for the REPL: a hammer swung down onto the anvil,
+//! throwing sparks.
+//!
+//! The hammer is held on the right, so it comes down in an arc from the upper
+//! right: head up with the handle hanging down, then diagonal, then flat on
+//! the anvil with the handle pointing right.
 //!
 //! Every frame is composed on a fixed `WIDTH` x `HEIGHT` character canvas, so
 //! redrawing is just "move the cursor `HEIGHT` lines up and print again".
@@ -18,26 +23,53 @@ const HEIGHT: usize = 13;
 const CENTER: usize = 17;
 /// Canvas row of the anvil's top surface (where sparks are born).
 const ANVIL_TOP: usize = 8;
-/// Top row of the hammer sprite when raised / at the moment of impact.
-const HAMMER_RAISED: usize = 0;
-const HAMMER_IMPACT: usize = 3;
 
 const RESET: &str = "\x1b[0m";
 
 // ─── sprites ───────────────────────────────────────────────────────────────
 // Spaces are transparent: they never overwrite what is already on the canvas.
 
-/// Handle, drawn above the head. Column 4 lines up with the head's `┻`.
-const HAMMER_HANDLE: [&str; 2] = [
-    "    ┃    ", //
-    "    ┃    ",
-];
+/// One hammer position: the steel head and the wooden handle, each with the
+/// canvas (row, column) its top-left corner sits at. The head's border carries
+/// the junction glyph the handle grows out of.
+struct Pose {
+    head: &'static [&'static str],
+    head_at: (usize, usize),
+    handle: &'static [&'static str],
+    handle_at: (usize, usize),
+}
 
-const HAMMER_HEAD: [&str; 3] = [
-    "┏━━━┻━━━┓", //
-    "┃███████┃",
-    "┗━━━━━━━┛",
-];
+/// Raised: head up and to the right, handle hanging down to the grip.
+const RAISED: Pose = Pose {
+    head: &["┏━━━━━━━┓", "┃███████┃", "┗━━━┳━━━┛"],
+    head_at: (0, 19),
+    handle: &["┃", "┃", "┃"],
+    handle_at: (3, 23),
+};
+
+/// Halfway through the swing, handle at roughly 45°.
+const SWING: Pose = Pose {
+    head: &["┏━━━━━━━┓", "┃███████┃", "┗━━━━━━━┛"],
+    head_at: (2, 16),
+    handle: &["╲", " ╲", "  ╲"],
+    handle_at: (5, 25),
+};
+
+/// Just short of the anvil, handle flattening out.
+const FALL: Pose = Pose {
+    head: &["┏━━━━━━━┓", "┃███████┣", "┗━━━━━━━┛"],
+    head_at: (3, 14),
+    handle: &["━━╲", "   ━━"],
+    handle_at: (4, 23),
+};
+
+/// On the anvil: head flat, handle straight out to the right.
+const STRIKE: Pose = Pose {
+    head: &["┏━━━━━━━┓", "┃███████┣", "┗━━━━━━━┛"],
+    head_at: (5, 13),
+    handle: &["━━━━━━"],
+    handle_at: (6, 22),
+};
 
 const ANVIL: [&str; 5] = [
     "     ▄▄▄▄▄▄▄▄▄▄▄     ",
@@ -115,6 +147,14 @@ impl Canvas {
         }
     }
 
+    /// Blit a hammer pose: wooden handle first, steel head over it.
+    fn draw_pose(&mut self, pose: &Pose) {
+        let (top, left) = pose.handle_at;
+        self.draw(pose.handle, top, left, Paint::Handle);
+        let (top, left) = pose.head_at;
+        self.draw(pose.head, top, left, Paint::Steel);
+    }
+
     /// Recolor existing cells without changing them — used for the hot spot
     /// the hammer leaves on the anvil.
     fn recolor(&mut self, row: usize, cols: std::ops::RangeInclusive<usize>, paint: Paint) {
@@ -164,12 +204,119 @@ impl Canvas {
     }
 }
 
-// ─── frames ────────────────────────────────────────────────────────────────
+// ─── storyboard ────────────────────────────────────────────────────────────
 
 /// A spark: canvas row, offset from [`CENTER`] (negative flies left), glyph.
 struct Spark(usize, i32, char, Paint);
 
-fn scene(hammer_top: usize, glow: Option<Paint>, sparks: &[Spark]) -> Canvas {
+/// The moment of impact: bright, tight, close to the struck face.
+const BURST: [Spark; 8] = [
+    Spark(7, -5, '✦', Paint::SparkHot),
+    Spark(7, 5, '✦', Paint::SparkHot),
+    Spark(6, -7, '✧', Paint::SparkHot),
+    Spark(5, 7, '✧', Paint::SparkHot),
+    Spark(5, -9, '·', Paint::SparkWarm),
+    Spark(4, 9, '·', Paint::SparkWarm),
+    Spark(ANVIL_TOP, -8, '·', Paint::SparkWarm),
+    Spark(ANVIL_TOP, 8, '·', Paint::SparkWarm),
+];
+
+/// A beat later: flying outward and starting to cool.
+const SPREAD: [Spark; 10] = [
+    Spark(4, -8, '✧', Paint::SparkHot),
+    Spark(3, 8, '✧', Paint::SparkHot),
+    Spark(5, -12, '·', Paint::SparkWarm),
+    Spark(4, 12, '·', Paint::SparkWarm),
+    Spark(6, -10, '✦', Paint::SparkWarm),
+    Spark(2, 10, '·', Paint::SparkWarm),
+    Spark(7, -13, '˙', Paint::SparkFade),
+    Spark(7, 13, '˙', Paint::SparkFade),
+    Spark(ANVIL_TOP, -11, '·', Paint::SparkFade),
+    Spark(ANVIL_TOP, 11, '·', Paint::SparkFade),
+];
+
+/// Drifting away as the hammer lifts.
+const DRIFTING: [Spark; 6] = [
+    Spark(1, -9, '·', Paint::SparkWarm),
+    Spark(1, 9, '·', Paint::SparkWarm),
+    Spark(2, -13, '˙', Paint::SparkFade),
+    Spark(3, 13, '˙', Paint::SparkFade),
+    Spark(5, -15, '˙', Paint::SparkFade),
+    Spark(6, 15, '˙', Paint::SparkFade),
+];
+
+/// The last two embers before everything goes cold.
+const EMBERS: [Spark; 2] = [
+    Spark(0, -12, '˙', Paint::SparkFade),
+    Spark(1, 13, '˙', Paint::SparkFade),
+];
+
+struct Frame {
+    delay_ms: u64,
+    pose: &'static Pose,
+    glow: Option<Paint>,
+    sparks: &'static [Spark],
+}
+
+/// The whole animation, about 900 ms. The last frame has no delay: it is what
+/// stays on screen.
+const STORYBOARD: [Frame; 8] = [
+    // Hammer up, waiting.
+    Frame {
+        delay_ms: 260,
+        pose: &RAISED,
+        glow: None,
+        sparks: &[],
+    },
+    // Coming down, picking up speed.
+    Frame {
+        delay_ms: 70,
+        pose: &SWING,
+        glow: None,
+        sparks: &[],
+    },
+    Frame {
+        delay_ms: 45,
+        pose: &FALL,
+        glow: None,
+        sparks: &[],
+    },
+    // Impact.
+    Frame {
+        delay_ms: 120,
+        pose: &STRIKE,
+        glow: Some(Paint::GlowHot),
+        sparks: &BURST,
+    },
+    Frame {
+        delay_ms: 120,
+        pose: &STRIKE,
+        glow: Some(Paint::GlowWarm),
+        sparks: &SPREAD,
+    },
+    // Bouncing back up, sparks flying outward and cooling.
+    Frame {
+        delay_ms: 130,
+        pose: &SWING,
+        glow: Some(Paint::GlowWarm),
+        sparks: &DRIFTING,
+    },
+    Frame {
+        delay_ms: 150,
+        pose: &RAISED,
+        glow: Some(Paint::GlowDim),
+        sparks: &EMBERS,
+    },
+    // Settled.
+    Frame {
+        delay_ms: 0,
+        pose: &RAISED,
+        glow: None,
+        sparks: &[],
+    },
+];
+
+fn scene(frame: &Frame) -> Canvas {
     let mut canvas = Canvas::new();
 
     canvas.draw(
@@ -178,111 +325,27 @@ fn scene(hammer_top: usize, glow: Option<Paint>, sparks: &[Spark]) -> Canvas {
         centered(ANVIL[0].chars().count()),
         Paint::Anvil,
     );
-    if let Some(paint) = glow {
+    if let Some(paint) = frame.glow {
         canvas.recolor(ANVIL_TOP, CENTER - 5..=CENTER + 5, paint);
     }
 
-    let head_left = centered(HAMMER_HEAD[0].chars().count());
-    canvas.draw(&HAMMER_HANDLE, hammer_top, head_left, Paint::Handle);
-    canvas.draw(
-        &HAMMER_HEAD,
-        hammer_top + HAMMER_HANDLE.len(),
-        head_left,
-        Paint::Steel,
-    );
-
-    // Sparks are drawn last so they sit in front of the steel.
-    for Spark(row, dx, ch, paint) in sparks {
+    // Sparks sit in front of the anvil but behind the hammer, so the hammer
+    // hides any that fly into it.
+    for Spark(row, dx, ch, paint) in frame.sparks {
         let col = CENTER as i32 + dx;
         if col >= 0 {
             canvas.put(*row, col as usize, *ch, *paint);
         }
     }
 
+    canvas.draw_pose(frame.pose);
     canvas
 }
 
 /// The still frame shown when the animation is skipped, and the state the
 /// animation settles back into: hammer raised over a cold anvil.
 fn resting_scene() -> Canvas {
-    scene(HAMMER_RAISED, None, &[])
-}
-
-/// (delay after the frame, frame). The last frame has no delay.
-fn frames() -> Vec<(Duration, Canvas)> {
-    use Paint::{SparkFade, SparkHot, SparkWarm};
-
-    let burst = [
-        Spark(ANVIL_TOP - 1, -5, '✦', SparkHot),
-        Spark(ANVIL_TOP - 1, 5, '✦', SparkHot),
-        Spark(ANVIL_TOP - 2, -7, '✧', SparkHot),
-        Spark(ANVIL_TOP - 2, 7, '✧', SparkHot),
-        Spark(ANVIL_TOP - 3, -9, '·', SparkWarm),
-        Spark(ANVIL_TOP - 3, 9, '·', SparkWarm),
-        Spark(ANVIL_TOP, -8, '·', SparkWarm),
-        Spark(ANVIL_TOP, 8, '·', SparkWarm),
-    ];
-
-    let spread = [
-        Spark(ANVIL_TOP - 4, -8, '✧', SparkHot),
-        Spark(ANVIL_TOP - 4, 8, '✧', SparkHot),
-        Spark(ANVIL_TOP - 3, -12, '·', SparkWarm),
-        Spark(ANVIL_TOP - 3, 12, '·', SparkWarm),
-        Spark(ANVIL_TOP - 2, -10, '✦', SparkWarm),
-        Spark(ANVIL_TOP - 2, 10, '·', SparkWarm),
-        Spark(ANVIL_TOP - 1, -13, '˙', SparkFade),
-        Spark(ANVIL_TOP - 1, 13, '˙', SparkFade),
-        Spark(ANVIL_TOP, -11, '·', SparkFade),
-        Spark(ANVIL_TOP, 11, '·', SparkFade),
-    ];
-
-    let drifting = [
-        Spark(ANVIL_TOP - 5, -9, '·', SparkWarm),
-        Spark(ANVIL_TOP - 5, 9, '·', SparkWarm),
-        Spark(ANVIL_TOP - 4, -13, '˙', SparkFade),
-        Spark(ANVIL_TOP - 4, 13, '˙', SparkFade),
-        Spark(ANVIL_TOP - 2, -15, '˙', SparkFade),
-        Spark(ANVIL_TOP - 2, 15, '˙', SparkFade),
-    ];
-
-    let embers = [
-        Spark(ANVIL_TOP - 6, -11, '˙', SparkFade),
-        Spark(ANVIL_TOP - 6, 11, '˙', SparkFade),
-    ];
-
-    vec![
-        // Hammer up, waiting.
-        (Duration::from_millis(260), scene(HAMMER_RAISED, None, &[])),
-        // Coming down, picking up speed.
-        (
-            Duration::from_millis(70),
-            scene(HAMMER_RAISED + 1, None, &[]),
-        ),
-        (
-            Duration::from_millis(45),
-            scene(HAMMER_RAISED + 2, None, &[]),
-        ),
-        // Impact.
-        (
-            Duration::from_millis(120),
-            scene(HAMMER_IMPACT, Some(Paint::GlowHot), &burst),
-        ),
-        (
-            Duration::from_millis(120),
-            scene(HAMMER_IMPACT, Some(Paint::GlowWarm), &spread),
-        ),
-        // Lifting off, sparks flying outward and cooling.
-        (
-            Duration::from_millis(130),
-            scene(HAMMER_IMPACT - 1, Some(Paint::GlowWarm), &drifting),
-        ),
-        (
-            Duration::from_millis(150),
-            scene(HAMMER_RAISED, Some(Paint::GlowDim), &embers),
-        ),
-        // Settled.
-        (Duration::ZERO, resting_scene()),
-    ]
+    scene(&STORYBOARD[STORYBOARD.len() - 1])
 }
 
 // ─── output ────────────────────────────────────────────────────────────────
@@ -317,19 +380,19 @@ pub fn animate() {
         return;
     }
 
-    for (i, (delay, canvas)) in frames().iter().enumerate() {
+    for (i, frame) in STORYBOARD.iter().enumerate() {
         if i > 0 {
             // \x1b[{n}F: move the cursor to the start of the line n rows up.
             let _ = write!(stdout, "\x1b[{}F", HEIGHT);
         }
-        for line in canvas.render(color) {
+        for line in scene(frame).render(color) {
             // \x1b[K: clear to end of line, so a shorter frame cannot leave
             // remnants of the previous one behind.
             let _ = writeln!(stdout, "{}\x1b[K", line);
         }
         let _ = stdout.flush();
-        if !delay.is_zero() {
-            sleep(*delay);
+        if frame.delay_ms > 0 {
+            sleep(Duration::from_millis(frame.delay_ms));
         }
     }
 }
@@ -338,18 +401,33 @@ pub fn animate() {
 mod tests {
     use super::*;
 
+    const POSES: [&Pose; 4] = [&RAISED, &SWING, &FALL, &STRIKE];
     const SPARK_GLYPHS: [char; 4] = ['✦', '✧', '·', '˙'];
+
+    fn scenes() -> Vec<Canvas> {
+        STORYBOARD.iter().map(scene).collect()
+    }
+
+    /// Rows of a rendered frame that contain any of `glyphs`.
+    fn rows_with(lines: &[String], glyphs: &[char]) -> Vec<usize> {
+        lines
+            .iter()
+            .enumerate()
+            .filter(|(_, line)| line.contains(glyphs))
+            .map(|(row, _)| row)
+            .collect()
+    }
 
     #[test]
     fn every_frame_fills_the_canvas_height() {
-        for (_, canvas) in frames() {
+        for canvas in scenes() {
             assert_eq!(canvas.render(false).len(), HEIGHT);
         }
     }
 
     #[test]
     fn no_frame_exceeds_the_canvas_width() {
-        for (_, canvas) in frames() {
+        for canvas in scenes() {
             for line in canvas.render(false) {
                 assert!(
                     line.chars().count() <= WIDTH,
@@ -362,7 +440,7 @@ mod tests {
 
     #[test]
     fn uncolored_render_has_no_escape_sequences() {
-        for (_, canvas) in frames() {
+        for canvas in scenes() {
             for line in canvas.render(false) {
                 assert!(!line.contains('\x1b'), "unexpected escape in {:?}", line);
             }
@@ -371,7 +449,7 @@ mod tests {
 
     #[test]
     fn colored_render_resets_every_line_it_paints() {
-        for (_, canvas) in frames() {
+        for canvas in scenes() {
             for line in canvas.render(true) {
                 if line.contains('\x1b') {
                     assert!(line.ends_with(RESET), "line not reset: {:?}", line);
@@ -382,45 +460,104 @@ mod tests {
 
     #[test]
     fn animation_starts_and_ends_at_rest() {
-        let frames = frames();
+        let scenes = scenes();
         let resting = resting_scene().render(false);
-        assert_eq!(frames.first().unwrap().1.render(false), resting);
-        assert_eq!(frames.last().unwrap().1.render(false), resting);
-        assert!(
-            frames.last().unwrap().0.is_zero(),
+        assert_eq!(scenes.first().unwrap().render(false), resting);
+        assert_eq!(scenes.last().unwrap().render(false), resting);
+        assert_eq!(
+            STORYBOARD.last().unwrap().delay_ms,
+            0,
             "last frame must not sleep"
         );
     }
 
-    #[test]
-    fn hammer_travels_down_to_the_anvil_and_back_up() {
-        let hammer_row = |canvas: &Canvas| {
-            canvas
-                .render(false)
-                .iter()
-                .position(|line| line.contains('┃'))
-                .expect("hammer is visible in every frame")
-        };
-        let rows: Vec<usize> = frames().iter().map(|(_, c)| hammer_row(c)).collect();
+    /// Canvas columns the handle covers.
+    fn handle_columns(pose: &Pose) -> Vec<usize> {
+        let (_, left) = pose.handle_at;
+        pose.handle
+            .iter()
+            .flat_map(|line| {
+                line.chars()
+                    .enumerate()
+                    .filter(|(_, ch)| *ch != ' ')
+                    .map(move |(dx, _)| left + dx)
+            })
+            .collect()
+    }
 
-        assert_eq!(rows.first(), Some(&HAMMER_RAISED));
-        assert_eq!(rows.iter().max(), Some(&HAMMER_IMPACT));
-        assert_eq!(rows.last(), Some(&HAMMER_RAISED));
-
-        // At impact the head rests directly on the anvil's top surface.
-        let head_bottom = HAMMER_IMPACT + HAMMER_HANDLE.len() + HAMMER_HEAD.len() - 1;
-        assert_eq!(head_bottom, ANVIL_TOP - 1);
+    fn head_center(pose: &Pose) -> usize {
+        pose.head_at.1 + pose.head[0].chars().count() / 2
     }
 
     #[test]
-    fn sparks_only_appear_after_the_hammer_lands() {
-        let has_sparks = |canvas: &Canvas| {
-            canvas
-                .render(false)
-                .iter()
-                .any(|line| line.contains(SPARK_GLYPHS))
-        };
-        let sparky: Vec<bool> = frames().iter().map(|(_, c)| has_sparks(c)).collect();
+    fn the_swing_comes_down_from_the_upper_right() {
+        // Head position per pose, in swing order.
+        let head_top: Vec<usize> = POSES.iter().map(|p| p.head_at.0).collect();
+        let centers: Vec<usize> = POSES.iter().map(|p| head_center(p)).collect();
+
+        assert!(
+            head_top.windows(2).all(|w| w[0] < w[1]),
+            "the head only ever moves downward: {:?}",
+            head_top
+        );
+        assert!(
+            centers.windows(2).all(|w| w[0] > w[1]),
+            "the head travels leftward as it falls: {:?}",
+            centers
+        );
+        assert_eq!(
+            *centers.last().unwrap(),
+            CENTER,
+            "the blow lands on the middle of the anvil"
+        );
+        // Three rows of head, resting directly on the anvil's top surface.
+        assert_eq!(STRIKE.head_at.0 + STRIKE.head.len() - 1, ANVIL_TOP - 1);
+    }
+
+    #[test]
+    fn the_handle_is_always_held_to_the_right_of_the_head() {
+        for pose in POSES {
+            let columns = handle_columns(pose);
+            assert!(!columns.is_empty(), "every pose shows a handle");
+            assert!(
+                columns.iter().all(|&col| col >= head_center(pose)),
+                "handle drifted left of the head: {:?}",
+                columns
+            );
+        }
+    }
+
+    #[test]
+    fn the_handle_is_wood_and_the_head_is_steel() {
+        for pose in POSES {
+            let canvas = scene(&Frame {
+                delay_ms: 0,
+                pose,
+                glow: None,
+                sparks: &[],
+            });
+            let cells = canvas.cells.iter().flatten();
+            let (wood, steel): (Vec<_>, Vec<_>) =
+                cells.partition(|(_, paint)| *paint == Paint::Handle);
+
+            assert_eq!(
+                wood.len(),
+                handle_columns(pose).len(),
+                "the whole handle is wood, and nothing else is"
+            );
+            assert!(
+                steel.iter().any(|(_, paint)| *paint == Paint::Steel),
+                "the head is steel"
+            );
+        }
+    }
+
+    #[test]
+    fn sparks_only_fly_once_the_hammer_lands() {
+        let sparky: Vec<bool> = scenes()
+            .iter()
+            .map(|canvas| !rows_with(&canvas.render(false), &SPARK_GLYPHS).is_empty())
+            .collect();
 
         assert!(!sparky[..3].iter().any(|&s| s), "no sparks before impact");
         assert!(sparky[3], "impact frame throws sparks");
@@ -428,29 +565,25 @@ mod tests {
     }
 
     #[test]
-    fn sparks_fly_clear_of_the_hammer_head() {
-        let head_left = centered(HAMMER_HEAD[0].chars().count());
-        let head_right = head_left + HAMMER_HEAD[0].chars().count() - 1;
-        for (_, canvas) in frames() {
-            for (row, line) in canvas.render(false).iter().enumerate() {
-                for (col, ch) in line.chars().enumerate() {
-                    if SPARK_GLYPHS.contains(&ch) {
-                        assert!(
-                            col < head_left || col > head_right || row >= ANVIL_TOP,
-                            "spark at ({}, {}) is hidden behind the hammer",
-                            row,
-                            col
-                        );
-                    }
-                }
-            }
+    fn no_spark_is_swallowed_by_the_hammer() {
+        for (frame, canvas) in STORYBOARD.iter().zip(scenes()) {
+            let drawn: usize = canvas
+                .render(false)
+                .iter()
+                .map(|line| line.chars().filter(|ch| SPARK_GLYPHS.contains(ch)).count())
+                .sum();
+            assert_eq!(
+                drawn,
+                frame.sparks.len(),
+                "a spark is hidden behind the hammer"
+            );
         }
     }
 
     #[test]
     fn the_anvil_stays_put_for_the_whole_animation() {
         let anvil_base = ANVIL[ANVIL.len() - 1].trim();
-        for (_, canvas) in frames() {
+        for canvas in scenes() {
             let lines = canvas.render(false);
             assert!(
                 lines[ANVIL_TOP + ANVIL.len() - 1].contains(anvil_base),
@@ -471,7 +604,7 @@ mod tests {
     /// Not an assertion — run with `--nocapture` to eyeball the frames.
     #[test]
     fn print_frames() {
-        for (i, (_, canvas)) in frames().iter().enumerate() {
+        for (i, canvas) in scenes().iter().enumerate() {
             println!("--- frame {} ---", i);
             for line in canvas.render(false) {
                 println!("|{}|", line);
