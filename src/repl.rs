@@ -20,8 +20,6 @@ pub fn run() {
     };
 
     crate::banner::animate();
-    println!("\x1b[1;97mDev Forge\x1b[0m  \x1b[37mv{}\x1b[0m", env!("CARGO_PKG_VERSION"));
-    println!("\x1b[37m\nA developer's workshop for everyday transformations.️\n\x1b[0m");
     println!("\x1b[37m\nType /help to see available commands.\n\x1b[0m");
     print_root_help();
 
