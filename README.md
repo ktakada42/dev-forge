@@ -1,7 +1,12 @@
 # dev-forge ⚒️
 
 [![Test](https://github.com/ktakada42/dev-forge/actions/workflows/test.yml/badge.svg)](https://github.com/ktakada42/dev-forge/actions/workflows/test.yml)
+[![Release](https://github.com/ktakada42/dev-forge/actions/workflows/release.yml/badge.svg)](https://github.com/ktakada42/dev-forge/actions/workflows/release.yml)
 [![codecov](https://codecov.io/gh/ktakada42/dev-forge/graph/badge.svg)](https://codecov.io/gh/ktakada42/dev-forge)
+[![GitHub release](https://img.shields.io/github/v/release/ktakada42/dev-forge)](https://github.com/ktakada42/dev-forge/releases/latest)
+[![License](https://img.shields.io/github/license/ktakada42/dev-forge)](LICENSE)
+
+![dev-forge startup animation](assets/demo.gif)
 
 A developer's workshop for everyday transformations — an interactive CLI REPL for common encoding, decoding, and conversion tasks.
 
@@ -56,40 +61,9 @@ Start the REPL:
 forge
 ```
 
-The REPL opens with a short animation — a hammer striking the anvil, sparks
-flying — before the prompt appears:
-
-```
-                     ┏━━━━━━━┓                 ┏━━━━━┓     ·
-                     ┃███████┃           ·     ┃█████┃   ✧
-                     ┗━━━┳━━━┛             ✧   ┃█████┣━━━━
-                         ┃         ...       ✦ ┗━━━━━┛ ✦
-                         ┃                ·  ▄▄▄▄▄▄▄▄▄▄▄  ·
-                                          █████████████████
-            ▄▄▄▄▄▄▄▄▄▄▄                   ▀▀▀▀▀▀█████▀▀▀▀▀▀
-         ████Dev Forge████                      █████
-         ▀▀▀▀▀▀█████▀▀▀▀▀▀                  █████████████
-               █████
-           █████████████
-```
-
-The hammer turns counter-clockwise through 90° about the hand, which stays put
-on the right — so the head swings down in an arc and turns face-down as it
-lands. It then disappears, leaving just the anvil — stamped with "Dev
-Forge" — standing above the prompt, with the app name, version, and tagline
-set beside it:
-
-```
-            ▄▄▄▄▄▄▄▄▄▄▄         Dev Forge
-         ████Dev Forge████      v0.1.0
-         ▀▀▀▀▀▀█████▀▀▀▀▀▀
-               █████            A developer's workshop for
-           █████████████        everyday transformations.
-```
-
-The animation is skipped automatically when output is not a terminal or when
-`TERM=dumb`. Set `FORGE_NO_ANIMATION=1` to always skip it (a still frame is
-printed instead), and `NO_COLOR=1` to drop the colors.
+Set `FORGE_NO_ANIMATION=1` to skip the startup animation (a still frame is
+printed instead), and `NO_COLOR=1` to drop the colors. Both are suppressed
+automatically when output is not a terminal or when `TERM=dumb`.
 
 ### Navigation
 
