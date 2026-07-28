@@ -56,6 +56,28 @@ Start the REPL:
 forge
 ```
 
+The REPL opens with a short animation — a hammer striking the anvil, sparks
+flying — before the prompt appears:
+
+```
+                 ┃
+                 ┃
+             ┏━━━┻━━━┓
+             ┃███████┃
+        ·    ┗━━━━━━━┛    ·
+          ✧            ✧
+            ✦        ✦
+         ·  ▄▄▄▄▄▄▄▄▄▄▄  ·
+         █████████████████
+         ▀▀▀▀▀▀█████▀▀▀▀▀▀
+               █████
+           █████████████
+```
+
+The animation is skipped automatically when output is not a terminal or when
+`TERM=dumb`. Set `FORGE_NO_ANIMATION=1` to always skip it (a still frame is
+printed instead), and `NO_COLOR=1` to drop the colors.
+
 ### Navigation
 
 | Command | Description |
