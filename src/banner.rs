@@ -1,5 +1,6 @@
 //! Startup animation for the REPL: a hammer swung down onto the anvil,
-//! throwing sparks.
+//! throwing sparks. The hammer then disappears, leaving the anvil — stamped
+//! with "Dev Forge" — on screen as the prompt comes up.
 //!
 //! The hammer is a rigid body turning counter-clockwise through 90° about
 //! [`GRIP`], the fixed point where the hand holds the end of the handle: head
@@ -90,6 +91,11 @@ const ANVIL: [&str; 5] = [
     "    █████████████    ",
 ];
 
+/// Stamped into the anvil's flat top (row 1 of [`ANVIL`]) in every frame.
+const LABEL: &str = "Dev Forge";
+/// Row of [`ANVIL`] the label is centered on.
+const LABEL_ROW: usize = 1;
+
 /// Horizontal offset that centers a sprite of `width` on [`CENTER`].
 const fn centered(width: usize) -> usize {
     CENTER - width / 2
@@ -102,6 +108,7 @@ enum Paint {
     Steel,
     Handle,
     Anvil,
+    Label,
     GlowHot,
     GlowWarm,
     GlowDim,
@@ -116,6 +123,7 @@ impl Paint {
             Paint::Steel => "\x1b[38;5;252m",
             Paint::Handle => "\x1b[38;5;130m",
             Paint::Anvil => "\x1b[38;5;244m",
+            Paint::Label => "\x1b[1;38;5;255m",
             Paint::GlowHot => "\x1b[1;38;5;226m",
             Paint::GlowWarm => "\x1b[38;5;208m",
             Paint::GlowDim => "\x1b[38;5;130m",
@@ -154,6 +162,17 @@ impl Canvas {
                 if ch != ' ' {
                     self.put(top + dy, left + dx, ch, paint);
                 }
+            }
+        }
+    }
+
+    /// Like [`Canvas::draw`], but a space overwrites whatever was underneath
+    /// instead of leaving it showing through. For text over a solid fill,
+    /// where a space is a real gap rather than "nothing to draw here".
+    fn draw_opaque(&mut self, sprite: &[&str], top: usize, left: usize, paint: Paint) {
+        for (dy, line) in sprite.iter().enumerate() {
+            for (dx, ch) in line.chars().enumerate() {
+                self.put(top + dy, left + dx, ch, paint);
             }
         }
     }
@@ -264,58 +283,66 @@ const EMBERS: [Spark; 2] = [
 
 struct Frame {
     delay_ms: u64,
-    pose: &'static Pose,
+    /// `None` once the hammer has left the scene — just the anvil remains.
+    pose: Option<&'static Pose>,
     glow: Option<Paint>,
     sparks: &'static [Spark],
 }
 
-/// The whole animation, about 850 ms. The last frame has no delay: it is what
-/// stays on screen.
-const STORYBOARD: [Frame; 7] = [
+/// The whole animation, about 1 second. The last frame has no delay: it is
+/// what stays on screen, the hammer gone and only the anvil left standing.
+const STORYBOARD: [Frame; 8] = [
     // Hammer up, waiting.
     Frame {
         delay_ms: 260,
-        pose: &RAISED,
+        pose: Some(&RAISED),
         glow: None,
         sparks: &[],
     },
     // Coming round.
     Frame {
         delay_ms: 60,
-        pose: &SWING,
+        pose: Some(&SWING),
         glow: None,
         sparks: &[],
     },
     // Impact.
     Frame {
         delay_ms: 120,
-        pose: &STRIKE,
+        pose: Some(&STRIKE),
         glow: Some(Paint::GlowHot),
         sparks: &BURST,
     },
     Frame {
         delay_ms: 120,
-        pose: &STRIKE,
+        pose: Some(&STRIKE),
         glow: Some(Paint::GlowWarm),
         sparks: &SPREAD,
     },
     // Bouncing back up, sparks flying outward and cooling.
     Frame {
         delay_ms: 130,
-        pose: &SWING,
+        pose: Some(&SWING),
         glow: Some(Paint::GlowWarm),
         sparks: &DRIFTING,
     },
     Frame {
         delay_ms: 150,
-        pose: &RAISED,
+        pose: Some(&RAISED),
         glow: Some(Paint::GlowDim),
         sparks: &EMBERS,
     },
-    // Settled.
+    // Settled, just for a beat, before the hammer is gone.
+    Frame {
+        delay_ms: 180,
+        pose: Some(&RAISED),
+        glow: None,
+        sparks: &[],
+    },
+    // The hammer is gone. Only the anvil, and its stamp, remain.
     Frame {
         delay_ms: 0,
-        pose: &RAISED,
+        pose: None,
         glow: None,
         sparks: &[],
     },
@@ -324,12 +351,14 @@ const STORYBOARD: [Frame; 7] = [
 fn scene(frame: &Frame) -> Canvas {
     let mut canvas = Canvas::new();
 
-    canvas.draw(
-        &ANVIL,
-        ANVIL_TOP,
-        centered(ANVIL[0].chars().count()),
-        Paint::Anvil,
-    );
+    let anvil_left = centered(ANVIL[0].chars().count());
+    canvas.draw(&ANVIL, ANVIL_TOP, anvil_left, Paint::Anvil);
+
+    let band_left = anvil_left + ANVIL[LABEL_ROW].chars().take_while(|&c| c == ' ').count();
+    let band_width = ANVIL[LABEL_ROW].trim().chars().count();
+    let label_col = band_left + (band_width - LABEL.chars().count()) / 2;
+    canvas.draw_opaque(&[LABEL], ANVIL_TOP + LABEL_ROW, label_col, Paint::Label);
+
     if let Some(paint) = frame.glow {
         canvas.recolor(ANVIL_TOP, CENTER - 5..=CENTER + 5, paint);
     }
@@ -343,13 +372,28 @@ fn scene(frame: &Frame) -> Canvas {
         }
     }
 
-    canvas.draw_pose(frame.pose);
+    if let Some(pose) = frame.pose {
+        canvas.draw_pose(pose);
+    }
     canvas
 }
 
-/// The still frame shown when the animation is skipped, and the state the
-/// animation settles back into: hammer raised over a cold anvil.
+/// The still frame shown when the animation is skipped: the hammer raised
+/// over the anvil, at rest — the same pose the animation opens on.
 fn resting_scene() -> Canvas {
+    scene(&Frame {
+        delay_ms: 0,
+        pose: Some(&RAISED),
+        glow: None,
+        sparks: &[],
+    })
+}
+
+/// What the animation settles into once it finishes: hammer gone, just the
+/// stamped anvil. Only used by tests; production code drives the same frame
+/// straight off the end of [`STORYBOARD`].
+#[cfg(test)]
+fn settled_scene() -> Canvas {
     scene(&STORYBOARD[STORYBOARD.len() - 1])
 }
 
@@ -465,16 +509,52 @@ mod tests {
     }
 
     #[test]
-    fn animation_starts_and_ends_at_rest() {
-        let scenes = scenes();
-        let resting = resting_scene().render(false);
-        assert_eq!(scenes.first().unwrap().render(false), resting);
-        assert_eq!(scenes.last().unwrap().render(false), resting);
+    fn animation_opens_on_the_resting_pose() {
         assert_eq!(
-            STORYBOARD.last().unwrap().delay_ms,
-            0,
-            "last frame must not sleep"
+            scenes().first().unwrap().render(false),
+            resting_scene().render(false)
         );
+    }
+
+    #[test]
+    fn animation_ends_with_the_hammer_gone() {
+        let last = STORYBOARD.last().unwrap();
+        assert!(last.pose.is_none(), "the hammer is still on screen");
+        assert_eq!(last.delay_ms, 0, "last frame must not sleep");
+        assert_eq!(
+            scenes().last().unwrap().render(false),
+            settled_scene().render(false)
+        );
+    }
+
+    #[test]
+    fn the_label_is_stamped_into_the_anvil_in_every_frame() {
+        for canvas in scenes() {
+            assert!(
+                canvas.render(false).iter().any(|line| line.contains(LABEL)),
+                "{:?} is missing from a frame",
+                LABEL
+            );
+        }
+        assert!(resting_scene()
+            .render(false)
+            .iter()
+            .any(|line| line.contains(LABEL)));
+    }
+
+    #[test]
+    fn no_hammer_glyph_survives_into_the_settled_scene() {
+        // Anything the head or handle draws with that the anvil and its
+        // label never use — if one of these turns up, the hammer didn't
+        // actually leave.
+        let hammer_only = ['┏', '┓', '┗', '┛', '┣', '┳', '┃', '━', '╲'];
+        for line in settled_scene().render(false) {
+            assert!(
+                !line.contains(hammer_only.as_slice()),
+                "hammer glyph left behind: {:?}",
+                line
+            );
+        }
     }
 
     /// Canvas columns the handle covers.
@@ -594,7 +674,7 @@ mod tests {
         for pose in POSES {
             let canvas = scene(&Frame {
                 delay_ms: 0,
-                pose,
+                pose: Some(pose),
                 glow: None,
                 sparks: &[],
             });

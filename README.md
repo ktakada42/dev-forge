@@ -67,7 +67,7 @@ flying — before the prompt appears:
                          ┃                ·  ▄▄▄▄▄▄▄▄▄▄▄  ·
                                           █████████████████
             ▄▄▄▄▄▄▄▄▄▄▄                   ▀▀▀▀▀▀█████▀▀▀▀▀▀
-         █████████████████                      █████
+         ████Dev Forge████                      █████
          ▀▀▀▀▀▀█████▀▀▀▀▀▀                  █████████████
                █████
            █████████████
@@ -75,7 +75,16 @@ flying — before the prompt appears:
 
 The hammer turns counter-clockwise through 90° about the hand, which stays put
 on the right — so the head swings down in an arc and turns face-down as it
-lands.
+lands. It then disappears, leaving just the anvil — stamped with "Dev
+Forge" — standing above the prompt:
+
+```
+            ▄▄▄▄▄▄▄▄▄▄▄
+         ████Dev Forge████
+         ▀▀▀▀▀▀█████▀▀▀▀▀▀
+               █████
+           █████████████
+```
 
 The animation is skipped automatically when output is not a terminal or when
 `TERM=dumb`. Set `FORGE_NO_ANIMATION=1` to always skip it (a still frame is
