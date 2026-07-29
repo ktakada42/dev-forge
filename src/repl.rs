@@ -152,10 +152,10 @@ pub fn run() {
 /// Parse "value [tz]" from a timestamp REPL line.
 ///
 /// Rules:
-///   - 1 token              → value only
+///   - 1 token → value only
 ///   - 2 tokens, first is numeric → value + tz
 ///   - 2 tokens, first is not numeric → datetime without tz (e.g. "2025-06-13 15:19:05")
-///   - 3+ tokens            → last token is tz, rest is value
+///   - 3+ tokens → last token is tz, rest is value
 fn parse_timestamp_line(line: &str) -> (&str, Option<&str>) {
     let tokens: Vec<&str> = line.split_whitespace().collect();
     match tokens.len() {
@@ -188,7 +188,7 @@ fn prompt_input(rl: &mut DefaultEditor) -> Option<String> {
 
 fn print_root_help() {
     println!("Available tools:");
-    println!("  /timestamp   Unix timestamp \u{21d4} datetime conversion");
+    println!("  /timestamp   Unix timestamp \u{2194} datetime conversion");
     println!("  /base64      Base64 encode/decode");
     println!("  /url         URL encode/decode");
     println!("  /jwt         JWT decode");
