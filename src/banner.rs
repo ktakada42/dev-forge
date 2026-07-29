@@ -16,7 +16,11 @@
 //! covers twice as many columns as rows.
 //!
 //! Every frame is composed on a fixed `WIDTH` x `HEIGHT` character canvas, so
-//! redrawing is just "move the cursor `HEIGHT` lines up and print again".
+//! redrawing is normally just "move the cursor up by the last frame's height
+//! and print again". Once the hammer is gone, the empty rows it used to swing
+//! through serve no purpose, so the last few frames crop more of them off the
+//! top each time ([`Frame::crop_top`]) — the void above the anvil visibly
+//! closes instead of being cut off in one jump or left sitting there forever.
 //!
 //! The animation is skipped (a single still frame is printed instead) when
 //! stdout is not a terminal, when `TERM=dumb`, or when `FORGE_NO_ANIMATION` is
@@ -302,17 +306,30 @@ struct Frame {
     pose: Option<&'static Pose>,
     glow: Option<Paint>,
     sparks: &'static [Spark],
+    /// Rows sliced off the top of the canvas before this frame is printed.
+    /// Only meaningful once the hammer is gone — those rows are the empty
+    /// space it used to swing through, so cropping them is indistinguishable
+    /// from them never having been there. Climbing this from 0 to
+    /// [`VOID_HEIGHT`] over a few frames is what collapses that space away
+    /// instead of just cutting it off in one jump.
+    crop_top: usize,
 }
 
-/// The whole animation, about 1 second. The last frame has no delay: it is
-/// what stays on screen, the hammer gone and only the anvil left standing.
-const STORYBOARD: [Frame; 8] = [
+/// Rows of empty space above the anvil once the hammer is gone (see
+/// [`ANVIL_TOP`]) — the hammer's old swing room, with nothing left in it.
+const VOID_HEIGHT: usize = ANVIL_TOP;
+
+/// The whole animation, a little over 1 second. The last frame has no delay:
+/// it is what stays on screen, the hammer gone, the void closed, and only the
+/// anvil left standing.
+const STORYBOARD: [Frame; 12] = [
     // Hammer up, waiting.
     Frame {
         delay_ms: 260,
         pose: Some(&RAISED),
         glow: None,
         sparks: &[],
+        crop_top: 0,
     },
     // Coming round.
     Frame {
@@ -320,6 +337,7 @@ const STORYBOARD: [Frame; 8] = [
         pose: Some(&SWING),
         glow: None,
         sparks: &[],
+        crop_top: 0,
     },
     // Impact.
     Frame {
@@ -327,12 +345,14 @@ const STORYBOARD: [Frame; 8] = [
         pose: Some(&STRIKE),
         glow: Some(Paint::GlowHot),
         sparks: &BURST,
+        crop_top: 0,
     },
     Frame {
         delay_ms: 120,
         pose: Some(&STRIKE),
         glow: Some(Paint::GlowWarm),
         sparks: &SPREAD,
+        crop_top: 0,
     },
     // Bouncing back up, sparks flying outward and cooling.
     Frame {
@@ -340,12 +360,14 @@ const STORYBOARD: [Frame; 8] = [
         pose: Some(&SWING),
         glow: Some(Paint::GlowWarm),
         sparks: &DRIFTING,
+        crop_top: 0,
     },
     Frame {
         delay_ms: 150,
         pose: Some(&RAISED),
         glow: Some(Paint::GlowDim),
         sparks: &EMBERS,
+        crop_top: 0,
     },
     // Settled, just for a beat, before the hammer is gone.
     Frame {
@@ -353,13 +375,45 @@ const STORYBOARD: [Frame; 8] = [
         pose: Some(&RAISED),
         glow: None,
         sparks: &[],
+        crop_top: 0,
     },
-    // The hammer is gone. Only the anvil, and its stamp, remain.
+    // The hammer is gone. One more beat before the void starts closing.
+    Frame {
+        delay_ms: 120,
+        pose: None,
+        glow: None,
+        sparks: &[],
+        crop_top: 0,
+    },
+    // The void collapses, the anvil rising to meet the top of the frame.
+    Frame {
+        delay_ms: 90,
+        pose: None,
+        glow: None,
+        sparks: &[],
+        crop_top: 2,
+    },
+    Frame {
+        delay_ms: 90,
+        pose: None,
+        glow: None,
+        sparks: &[],
+        crop_top: 4,
+    },
+    Frame {
+        delay_ms: 90,
+        pose: None,
+        glow: None,
+        sparks: &[],
+        crop_top: 6,
+    },
+    // Closed. Only the anvil, and its stamp, remain.
     Frame {
         delay_ms: 0,
         pose: None,
         glow: None,
         sparks: &[],
+        crop_top: VOID_HEIGHT,
     },
 ];
 
@@ -405,6 +459,7 @@ fn resting_scene() -> Canvas {
         pose: Some(&RAISED),
         glow: None,
         sparks: &[],
+        crop_top: 0,
     })
 }
 
@@ -448,17 +503,28 @@ pub fn animate() {
         return;
     }
 
+    // How many lines the previous frame actually printed — frames shrink as
+    // the void above the anvil closes, so this isn't always HEIGHT.
+    let mut printed = 0;
     for (i, frame) in STORYBOARD.iter().enumerate() {
         if i > 0 {
             // \x1b[{n}F: move the cursor to the start of the line n rows up.
-            let _ = write!(stdout, "\x1b[{}F", HEIGHT);
+            let _ = write!(stdout, "\x1b[{}F", printed);
         }
-        for line in scene(frame).render(color) {
+        let lines = scene(frame).render(color);
+        let visible = &lines[frame.crop_top..];
+        for line in visible {
             // \x1b[K: clear to end of line, so a shorter frame cannot leave
             // remnants of the previous one behind.
             let _ = writeln!(stdout, "{}\x1b[K", line);
         }
+        if visible.len() < printed {
+            // \x1b[J: erase from the cursor to the end of the screen — this
+            // frame is shorter than the last, so rows are left over below.
+            let _ = write!(stdout, "\x1b[J");
+        }
         let _ = stdout.flush();
+        printed = visible.len();
         if frame.delay_ms > 0 {
             sleep(Duration::from_millis(frame.delay_ms));
         }
@@ -544,6 +610,55 @@ mod tests {
             scenes().last().unwrap().render(false),
             settled_scene().render(false)
         );
+        assert_eq!(
+            last.crop_top, VOID_HEIGHT,
+            "the void must be fully closed by the last frame"
+        );
+    }
+
+    #[test]
+    fn cropping_never_happens_while_the_hammer_is_still_there() {
+        // crop_top slices rows off the top of the canvas on the assumption
+        // that they're empty. The hammer draws into exactly that space, so
+        // cropping while it's still on screen would cut the hammer itself.
+        for frame in &STORYBOARD {
+            if frame.pose.is_some() {
+                assert_eq!(frame.crop_top, 0, "cropped a frame the hammer is still in");
+            }
+        }
+    }
+
+    #[test]
+    fn the_void_closes_monotonically_and_never_past_itself() {
+        let crops: Vec<usize> = STORYBOARD.iter().map(|f| f.crop_top).collect();
+        assert!(
+            crops.windows(2).all(|w| w[0] <= w[1]),
+            "the void reopens partway through: {:?}",
+            crops
+        );
+        assert!(
+            crops.iter().all(|&c| c <= VOID_HEIGHT),
+            "cropped past the void, into the anvil: {:?}",
+            crops
+        );
+    }
+
+    #[test]
+    fn cropped_rows_are_always_actually_blank() {
+        // The whole trick only works because these rows have nothing in
+        // them — cropping is then indistinguishable from them never having
+        // been drawn. If a future frame put something in the void while
+        // still cropping it, this is the test that would catch it.
+        for (frame, canvas) in STORYBOARD.iter().zip(scenes()) {
+            let lines = canvas.render(false);
+            for line in &lines[..frame.crop_top] {
+                assert!(
+                    line.is_empty(),
+                    "row inside the cropped void isn't blank: {:?}",
+                    line
+                );
+            }
+        }
     }
 
     #[test]
@@ -733,6 +848,7 @@ mod tests {
                 pose: Some(pose),
                 glow: None,
                 sparks: &[],
+                crop_top: 0,
             });
             let cells = canvas.cells.iter().flatten();
             let (wood, steel): (Vec<_>, Vec<_>) =
