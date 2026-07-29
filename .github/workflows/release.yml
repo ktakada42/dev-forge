@@ -42,6 +42,14 @@ jobs:
             echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
           fi
 
+      - name: Set version from tag
+        shell: bash
+        run: |
+          VER="${{ github.ref_name }}"
+          VER="${VER#v}"
+          sed -i.bak "s/^version = \".*\"/version = \"${VER}\"/" Cargo.toml
+          rm Cargo.toml.bak
+
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
 
