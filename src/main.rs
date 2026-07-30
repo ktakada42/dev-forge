@@ -9,7 +9,7 @@ use clap::{Parser, Subcommand};
 #[derive(Parser)]
 #[command(
     name = "forge",
-    version,
+    version = env!("FORGE_VERSION"),
     about = "dev-forge: developer utility tools"
 )]
 struct Cli {

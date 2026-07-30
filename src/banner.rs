@@ -47,7 +47,7 @@ const RESET: &str = "\x1b[0m";
 // frame without ever worrying about what pose the hammer is in.
 
 const TEXT_LEFT: usize = 32;
-const VERSION: &str = concat!("v", env!("CARGO_PKG_VERSION"));
+const VERSION: &str = env!("FORGE_VERSION");
 const TAGLINE: [&str; 2] = ["A developer's workshop for", "everyday transformations."];
 
 // ─── sprites ───────────────────────────────────────────────────────────────
