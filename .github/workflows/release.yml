@@ -26,6 +26,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -75,6 +77,37 @@ jobs:
             *.tar.gz
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  sync-version:
+    name: Sync Cargo.toml version
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Bump Cargo.toml / Cargo.lock
+        run: |
+          VER="${{ github.ref_name }}"
+          VER="${VER#v}"
+          sed -i "s/^version = \".*\"/version = \"${VER}\"/" Cargo.toml
+          cargo check --quiet
+
+      - name: Commit and push
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- Cargo.toml Cargo.lock; then
+            echo "Cargo.toml is already at ${{ github.ref_name }}, nothing to do."
+            exit 0
+          fi
+          git add Cargo.toml Cargo.lock
+          git commit -m "chore(release): ${{ github.ref_name }}"
+          git push origin HEAD:main
 
   update-homebrew:
     name: Update Homebrew Formula
