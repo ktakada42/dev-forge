@@ -147,6 +147,15 @@ fn keybindings() -> Keybindings {
     // as distinct from Enter — see `newline_key`.
     keys.add_binding(KeyModifiers::ALT, KeyCode::Enter, newline);
     keys.add_binding(KeyModifiers::NONE, KeyCode::Esc, ReedlineEvent::CtrlC);
+    // Tab types a tab. The editor's own use for the key is to open a
+    // completion menu, and there is nothing here to complete — while a tab is
+    // an ordinary thing to find inside text that wants encoding, and pasting
+    // was the only way to get one in.
+    keys.add_binding(
+        KeyModifiers::NONE,
+        KeyCode::Tab,
+        ReedlineEvent::Edit(vec![EditCommand::InsertChar('\t')]),
+    );
     keys
 }
 
@@ -224,7 +233,11 @@ fn session(editor: &mut Reedline, mode: Mode) -> Flow {
             continue;
         }
 
-        match convert(mode, line.trim()) {
+        // Converted as typed, spaces and tabs at the ends included: they are
+        // part of the payload, and `forge base64 encode " a "` keeps them too.
+        // Nothing is lost by leaving them in — every tool that wants its input
+        // tidied trims for itself, because the same input arrives from a pipe.
+        match convert(mode, &line) {
             Ok(result) => println!("{}", result),
             Err(e) => println!("Error: {}", e),
         }
@@ -482,6 +495,57 @@ mod tests {
             "2025-06-13T10:59:05+00:00"
         );
         assert!(convert(Mode::Jwt, "not-a-jwt").is_err());
+    }
+
+    #[test]
+    fn whitespace_at_the_ends_of_a_payload_is_part_of_it() {
+        // The prompt converts what was typed. `forge base64 encode " a "`
+        // keeps the spaces, and the two ways in should not disagree.
+        assert_eq!(
+            convert(Mode::Base64(Direction::Encode), " a ").unwrap(),
+            tools::base64::encode(" a ")
+        );
+        assert_eq!(
+            convert(Mode::Base64(Direction::Encode), "a\tb").unwrap(),
+            "YQli"
+        );
+        assert_eq!(
+            convert(Mode::Base64(Direction::Encode), "a\nb").unwrap(),
+            "YQpi"
+        );
+        // Timestamps are read out of the line rather than converted whole, so
+        // stray whitespace around them still does no harm.
+        assert_eq!(
+            convert(Mode::Timestamp, "  1749812345 UTC  ").unwrap(),
+            "2025-06-13T10:59:05+00:00"
+        );
+    }
+
+    #[test]
+    fn the_keys_that_type_a_control_character_are_bound() {
+        let keys = keybindings();
+        let inserts = |modifier, code| {
+            matches!(
+                keys.find_binding(modifier, code),
+                Some(ReedlineEvent::Edit(edits)) if edits == expected_edit(code)
+            )
+        };
+        assert!(inserts(KeyModifiers::SHIFT, KeyCode::Enter));
+        assert!(inserts(KeyModifiers::ALT, KeyCode::Enter));
+        assert!(inserts(KeyModifiers::NONE, KeyCode::Tab));
+        // Escape backs out, the way it does in the lists.
+        assert_eq!(
+            keys.find_binding(KeyModifiers::NONE, KeyCode::Esc),
+            Some(ReedlineEvent::CtrlC)
+        );
+    }
+
+    /// The edit each of those keys is expected to make.
+    fn expected_edit(code: KeyCode) -> Vec<EditCommand> {
+        match code {
+            KeyCode::Tab => vec![EditCommand::InsertChar('\t')],
+            _ => vec![EditCommand::InsertNewline],
+        }
     }
 
     #[test]

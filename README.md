@@ -114,7 +114,9 @@ protocol, which Ghostty, kitty, WezTerm and foot speak; without it the two keys
 are the same byte and the hint names alt+enter instead, which arrives as
 ESC+Enter (on macOS, terminals send that only with Option set to act as Meta).
 Either way the hint names the key that works where you are running, and pasting
-text that already has newlines in it works in any terminal.
+text that already has newlines in it works in any terminal. Tab types a tab,
+and spaces at either end of a line are part of the payload — what you see on
+the line is what gets converted.
 
 ### Timestamp
 
