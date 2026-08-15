@@ -93,7 +93,7 @@ type is converted:
 ? Select a tool  base64
 ? base64  encode
   Text to encode.
-  esc, empty line    back to the tool list
+  esc, ctrl-c        back to the tool list
   ctrl-d             quit
 
 forge(base64 encode)> hello
@@ -103,8 +103,9 @@ aGVsbG8gd29ybGQ=
 ```
 
 Nothing typed at that prompt is a command — a payload that reads like `exit` is
-encoded, not obeyed. Esc or an empty line returns to the tool list, and ctrl-d
-quits. The keys mean the same thing at the prompt as they do in the lists.
+encoded, not obeyed. Esc and ctrl-c go back to the tool list, ctrl-d quits, and
+Enter on an empty line does nothing. The keys mean the same thing at the prompt
+as they do in the lists.
 
 ### Timestamp
 

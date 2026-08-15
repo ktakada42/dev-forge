@@ -8,9 +8,9 @@
 //!
 //! Once a direction is chosen it stays chosen, and every line typed after it
 //! is data. That is what a converter is for: paste, read, paste the next one.
-//! It also means nothing typed at the prompt is a command — an empty line
-//! returns to the tool list, and Ctrl-D leaves — so a payload that happens to
-//! read like `exit` is encoded rather than obeyed.
+//! It also means nothing typed at the prompt is a command — Escape and Ctrl-C
+//! go back, Ctrl-D leaves — so a payload that happens to read like `exit` is
+//! encoded rather than obeyed.
 
 use rustyline::{error::ReadlineError, Cmd, Config, DefaultEditor, KeyCode, KeyEvent, Modifiers};
 
@@ -174,8 +174,8 @@ fn session(rl: &mut DefaultEditor, mode: Mode) -> Flow {
     loop {
         let line = match rl.readline(&prompt(mode)) {
             Ok(line) => line,
-            // Ctrl-C and Escape back out of the tool the same way an empty
-            // line does; Ctrl-D is the one that leaves.
+            // Escape and Ctrl-C go back a screen; Ctrl-D is the one that
+            // leaves. Both are what every other REPL does with those keys.
             Err(ReadlineError::Interrupted) => return Flow::Back,
             Err(ReadlineError::Eof) => return Flow::Exit,
             Err(e) => {
@@ -184,8 +184,12 @@ fn session(rl: &mut DefaultEditor, mode: Mode) -> Flow {
             }
         };
 
+        // Enter on an empty line does nothing, as it does at every other
+        // prompt. Leaving the tool used to be bound here, but Enter is the
+        // key a hand presses without deciding to, and there is nothing to
+        // convert either way.
         if line.trim().is_empty() {
-            return Flow::Back;
+            continue;
         }
         let _ = rl.add_history_entry(&line);
 
@@ -233,7 +237,8 @@ fn convert(mode: Mode, input: &str) -> Result<String, String> {
 /// This replaces the old `/help`: what a tool accepts is worth saying once,
 /// when it starts mattering, rather than leaving it behind a command that has
 /// to be discovered first. The last lines are the way out, which is the one
-/// thing a prompt that treats everything as data has to spell out.
+/// thing a prompt that treats everything as data has to spell out — no word
+/// typed here will do it.
 fn print_intro(mode: Mode) {
     for line in intro(mode) {
         println!("{}", dim(&line));
@@ -256,7 +261,7 @@ fn intro(mode: Mode) -> Vec<String> {
         Mode::Url(Direction::Decode) => vec!["  Percent-encoded text to decode.".to_string()],
         Mode::Jwt => vec!["  A JWT to decode. The signature is not verified.".to_string()],
     };
-    lines.push("  esc, empty line    back to the tool list".to_string());
+    lines.push("  esc, ctrl-c        back to the tool list".to_string());
     lines.push("  ctrl-d             quit".to_string());
     lines
 }
@@ -435,9 +440,9 @@ mod tests {
             let text = intro(mode).join("\n");
             assert!(text.contains("back to the tool list"), "{text}");
             assert!(text.contains("ctrl-d"), "{text}");
-            // Escape does here what it did in the list, so it is named here
-            // too rather than left to be discovered.
-            assert!(text.contains("esc"), "{text}");
+            // Escape and Ctrl-C do here what they did in the list, so both
+            // are named rather than left to be discovered.
+            assert!(text.contains("esc, ctrl-c"), "{text}");
             // Plain ASCII: arrows and the like render inconsistently, and the
             // emoji-presentation ones are drawn double width.
             assert!(text.is_ascii(), "{text}");
