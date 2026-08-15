@@ -21,6 +21,7 @@ use reedline::{
     ReedlineEvent, Signal,
 };
 
+use crate::escape::unescape;
 use crate::picker::{self, Item, Outcome};
 use crate::tools;
 
@@ -305,9 +306,13 @@ fn convert(mode: Mode, input: &str) -> Result<String, String> {
             let (value, tz) = parse_timestamp_line(input);
             tools::timestamp::convert(value, tz)
         }
-        Mode::Base64(Direction::Encode) => Ok(tools::base64::encode(input)),
+        // Only the directions that take text read escapes. What the decoders
+        // take is base64, percent-encoded text or a token — alphabets with no
+        // backslash in them, where an escape could only be a way to break the
+        // input.
+        Mode::Base64(Direction::Encode) => Ok(tools::base64::encode(&unescape(input)?)),
         Mode::Base64(Direction::Decode) => tools::base64::decode(input),
-        Mode::Url(Direction::Encode) => Ok(tools::url::encode(input)),
+        Mode::Url(Direction::Encode) => Ok(tools::url::encode(&unescape(input)?)),
         Mode::Url(Direction::Decode) => tools::url::decode(input),
         Mode::Jwt => tools::jwt::decode(input),
     }
@@ -327,6 +332,11 @@ fn print_intro(mode: Mode, newline_key: &str) {
     println!();
 }
 
+/// Said in the intro of the directions that take text, because a backslash
+/// stops meaning itself there. See [`crate::escape`].
+const ESCAPES: &str =
+    "  escapes            \\n \\t \\r \\0 \\e \\xNN \\u{...}, and \\\\ for a backslash";
+
 fn intro(mode: Mode, newline_key: &str) -> Vec<String> {
     let mut lines: Vec<String> = match mode {
         Mode::Timestamp => vec![
@@ -336,9 +346,13 @@ fn intro(mode: Mode, newline_key: &str) -> Vec<String> {
             "                     2025/06/13 15:19:05".to_string(),
             "  timezones          Asia/Tokyo, UTC, America/New_York, +09:00".to_string(),
         ],
-        Mode::Base64(Direction::Encode) => vec!["  Text to encode.".to_string()],
+        Mode::Base64(Direction::Encode) => {
+            vec!["  Text to encode.".to_string(), ESCAPES.to_string()]
+        }
         Mode::Base64(Direction::Decode) => vec!["  Base64 to decode.".to_string()],
-        Mode::Url(Direction::Encode) => vec!["  Text to percent-encode.".to_string()],
+        Mode::Url(Direction::Encode) => {
+            vec!["  Text to percent-encode.".to_string(), ESCAPES.to_string()]
+        }
         Mode::Url(Direction::Decode) => vec!["  Percent-encoded text to decode.".to_string()],
         Mode::Jwt => vec!["  A JWT to decode. The signature is not verified.".to_string()],
     };
@@ -495,6 +509,57 @@ mod tests {
             "2025-06-13T10:59:05+00:00"
         );
         assert!(convert(Mode::Jwt, "not-a-jwt").is_err());
+    }
+
+    #[test]
+    fn the_directions_that_take_text_read_escapes() {
+        assert_eq!(
+            convert(Mode::Base64(Direction::Encode), "a\\tb").unwrap(),
+            tools::base64::encode("a\tb")
+        );
+        assert_eq!(
+            convert(Mode::Url(Direction::Encode), "a\\nb").unwrap(),
+            tools::url::encode("a\nb")
+        );
+        // An escape nobody defined says so, rather than encoding something
+        // the typist did not ask for.
+        assert!(convert(Mode::Base64(Direction::Encode), "C:\\Users")
+            .unwrap_err()
+            .contains("Escape error"));
+    }
+
+    #[test]
+    fn what_the_decoders_take_has_no_backslashes_to_read() {
+        // Base64, percent-encoded text and tokens are alphabets without a
+        // backslash, so a backslash there is input to be reported on, not an
+        // escape to be honoured.
+        assert_eq!(
+            convert(Mode::Base64(Direction::Decode), "YQli").unwrap(),
+            "a\tb"
+        );
+        assert!(convert(Mode::Base64(Direction::Decode), "a\\tb").is_err());
+        assert_eq!(
+            convert(Mode::Url(Direction::Decode), "a%5Ctb").unwrap(),
+            "a\\tb"
+        );
+    }
+
+    #[test]
+    fn the_intro_says_a_backslash_has_a_meaning_where_it_has_one() {
+        for mode in [
+            Mode::Base64(Direction::Encode),
+            Mode::Url(Direction::Encode),
+        ] {
+            assert!(intro(mode, "shift+enter").join("\n").contains("escapes"));
+        }
+        for mode in [
+            Mode::Base64(Direction::Decode),
+            Mode::Url(Direction::Decode),
+            Mode::Jwt,
+            Mode::Timestamp,
+        ] {
+            assert!(!intro(mode, "shift+enter").join("\n").contains("escapes"));
+        }
     }
 
     #[test]
