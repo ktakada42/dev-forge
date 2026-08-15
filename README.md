@@ -75,7 +75,7 @@ dev-forge asks which tool you want with a list, not a command:
   base64     Base64 encode/decode
   url        URL encode/decode
   jwt        JWT decode (no signature verification)
-  up/down move   enter select   esc quit
+  up/down move   enter select   esc/ctrl-d quit
 ```
 
 | Key | Description |
@@ -83,7 +83,7 @@ dev-forge asks which tool you want with a list, not a command:
 | up / down (or ctrl-p / ctrl-n, tab) | Move the cursor |
 | any letter | Filter the list |
 | enter | Select |
-| esc (or ctrl-c) | Back — from the tool list, quit |
+| esc, ctrl-d (or ctrl-c) | Back — from the tool list, quit |
 
 Tools that go both ways ask the same way, so `base64` is followed by a list of
 `encode` / `decode`. Once picked, the direction stays picked and every line you
@@ -93,7 +93,7 @@ type is converted:
 ? Select a tool  base64
 ? base64  encode
   Text to encode.
-  empty line         back to the tool list
+  esc, empty line    back to the tool list
   ctrl-d             quit
 
 forge(base64 encode)> hello
@@ -103,7 +103,8 @@ aGVsbG8gd29ybGQ=
 ```
 
 Nothing typed at that prompt is a command — a payload that reads like `exit` is
-encoded, not obeyed. An empty line returns to the tool list, and ctrl-d quits.
+encoded, not obeyed. Esc or an empty line returns to the tool list, and ctrl-d
+quits. The keys mean the same thing at the prompt as they do in the lists.
 
 ### Timestamp
 

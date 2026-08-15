@@ -12,7 +12,7 @@
 //! returns to the tool list, and Ctrl-D leaves — so a payload that happens to
 //! read like `exit` is encoded rather than obeyed.
 
-use rustyline::{error::ReadlineError, DefaultEditor};
+use rustyline::{error::ReadlineError, Cmd, Config, DefaultEditor, KeyCode, KeyEvent, Modifiers};
 
 use crate::picker::{self, Item, Outcome};
 use crate::tools;
@@ -97,13 +97,27 @@ pub fn run() {
         std::process::exit(1);
     }
 
-    let mut rl = match DefaultEditor::new() {
+    // Escape only ever arrives as the first byte of something: an arrow key
+    // is `ESC [ A`. Readline's emacs mode therefore waits forever for the
+    // rest, which is why an Escape on its own used to do nothing until the
+    // next keystroke — and then eat it. A timeout is what turns a lone
+    // Escape into a key of its own; 100ms is long enough for the rest of a
+    // real sequence to land and short enough to feel like a press.
+    let config = Config::builder().keyseq_timeout(Some(100)).build();
+    let mut rl = match DefaultEditor::with_config(config) {
         Ok(rl) => rl,
         Err(e) => {
             eprintln!("Failed to initialize REPL: {}", e);
             return;
         }
     };
+
+    // Escape means at the prompt what it meant in the list the prompt was
+    // reached through: back to the tool list. Left as readline found it, it
+    // is the meta prefix — nothing visible happens and the next keystroke is
+    // swallowed, which is the worst of both answers. `Interrupt` is the same
+    // door Ctrl-C uses, so the two keys agree.
+    rl.bind_sequence(KeyEvent(KeyCode::Esc, Modifiers::NONE), Cmd::Interrupt);
 
     crate::banner::animate();
     println!();
@@ -160,8 +174,8 @@ fn session(rl: &mut DefaultEditor, mode: Mode) -> Flow {
     loop {
         let line = match rl.readline(&prompt(mode)) {
             Ok(line) => line,
-            // Ctrl-C backs out of the tool the same way an empty line does;
-            // Ctrl-D is the one that leaves.
+            // Ctrl-C and Escape back out of the tool the same way an empty
+            // line does; Ctrl-D is the one that leaves.
             Err(ReadlineError::Interrupted) => return Flow::Back,
             Err(ReadlineError::Eof) => return Flow::Exit,
             Err(e) => {
@@ -242,7 +256,7 @@ fn intro(mode: Mode) -> Vec<String> {
         Mode::Url(Direction::Decode) => vec!["  Percent-encoded text to decode.".to_string()],
         Mode::Jwt => vec!["  A JWT to decode. The signature is not verified.".to_string()],
     };
-    lines.push("  empty line         back to the tool list".to_string());
+    lines.push("  esc, empty line    back to the tool list".to_string());
     lines.push("  ctrl-d             quit".to_string());
     lines
 }
@@ -421,6 +435,9 @@ mod tests {
             let text = intro(mode).join("\n");
             assert!(text.contains("back to the tool list"), "{text}");
             assert!(text.contains("ctrl-d"), "{text}");
+            // Escape does here what it did in the list, so it is named here
+            // too rather than left to be discovered.
+            assert!(text.contains("esc"), "{text}");
             // Plain ASCII: arrows and the like render inconsistently, and the
             // emoji-presentation ones are drawn double width.
             assert!(text.is_ascii(), "{text}");

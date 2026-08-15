@@ -282,13 +282,15 @@ enum Action {
 /// Maps a key to an action.
 ///
 /// The emacs pairs (Ctrl-N / Ctrl-P) are here because the prompt below the
-/// picker is a readline, and hands already in that habit reach for them.
+/// picker is a readline, and hands already in that habit reach for them. So
+/// is Ctrl-D: it leaves the prompt, and a key that leaves one screen should
+/// not be dead on the next.
 fn action(key: &KeyEvent) -> Action {
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
     match key.code {
         KeyCode::Enter => Action::Confirm,
         KeyCode::Esc => Action::Cancel,
-        KeyCode::Char('c') | KeyCode::Char('g') if ctrl => Action::Cancel,
+        KeyCode::Char('c') | KeyCode::Char('d') | KeyCode::Char('g') if ctrl => Action::Cancel,
         KeyCode::Down | KeyCode::Tab => Action::Down,
         KeyCode::Up | KeyCode::BackTab => Action::Up,
         KeyCode::Char('n') if ctrl => Action::Down,
@@ -378,7 +380,7 @@ fn header(title: &str, filter: &str) -> String {
 /// about, and the ones with an emoji presentation render double width and
 /// shift the whole row.
 fn hints(cancel: &str) -> String {
-    format!("  up/down move   enter select   esc {cancel}")
+    format!("  up/down move   enter select   esc/ctrl-d {cancel}")
 }
 
 /// Truncates to `width` so a line can never wrap.
@@ -547,7 +549,9 @@ mod tests {
 
     #[test]
     fn escape_and_ctrl_c_back_out() {
-        for k in [key(KeyCode::Esc), ctrl('c'), ctrl('g')] {
+        // Ctrl-D is here too: it is what leaves the prompt these lists sit
+        // above, so it backs out of the list rather than doing nothing.
+        for k in [key(KeyCode::Esc), ctrl('c'), ctrl('d'), ctrl('g')] {
             assert_eq!(action(&k), Action::Cancel);
         }
         let mut l = list();
@@ -586,7 +590,9 @@ mod tests {
         assert_eq!(cursor_row, Some(1));
         assert!(lines[1].starts_with("> timestamp"));
         assert!(lines[2].starts_with("  base64"));
-        assert!(lines.last().unwrap().contains("esc quit"));
+        // The hint line names both keys that back out, and says what backing
+        // out means on this particular list.
+        assert!(lines.last().unwrap().contains("esc/ctrl-d quit"));
     }
 
     #[test]
