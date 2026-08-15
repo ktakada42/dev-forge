@@ -12,6 +12,8 @@
 //! go back, Ctrl-D leaves — so a payload that happens to read like `exit` is
 //! encoded rather than obeyed.
 
+use std::io::{self, Write};
+
 use rustyline::{error::ReadlineError, Cmd, Config, DefaultEditor, KeyCode, KeyEvent, Modifiers};
 
 use crate::picker::{self, Item, Outcome};
@@ -97,6 +99,9 @@ pub fn run() {
         std::process::exit(1);
     }
 
+    // Held for the whole session; see `PlainKeys`.
+    let _plain_keys = PlainKeys::ask_for();
+
     // Escape only ever arrives as the first byte of something: an arrow key
     // is `ESC [ A`. Readline's emacs mode therefore waits forever for the
     // rest, which is why an Escape on its own used to do nothing until the
@@ -135,6 +140,45 @@ pub fn run() {
             break;
         }
     }
+}
+
+/// Asks the terminal to report modified keys the plain way, and puts the
+/// setting back on the way out.
+///
+/// Terminals that have xterm's "modify other keys" turned on spell Shift-Enter
+/// `ESC [ 27 ; 2 ; 13 ~`. Readline's parser walks into that sequence, gives up
+/// half way through it, and types what is left — `13~` — into the line, where
+/// it silently becomes part of the payload. The same is true of every other
+/// modified key the terminal decides to report.
+///
+/// dev-forge reads no key that this reporting is needed for: Ctrl-C, Ctrl-D
+/// and Escape all arrive as bytes of their own. So the reports are asked to
+/// stop for as long as the REPL runs, which leaves Shift-Enter arriving as a
+/// plain Enter — it submits the line, rather than corrupting it.
+struct PlainKeys;
+
+/// `CSI > 4 ; 0 m` — xterm's XTMODKEYS, "report other keys the old way".
+const MODIFY_OTHER_KEYS_OFF: &str = "\x1b[>4;0m";
+/// `CSI > 4 m` — the same setting, back to whatever the terminal had.
+const MODIFY_OTHER_KEYS_RESET: &str = "\x1b[>4m";
+
+impl PlainKeys {
+    fn ask_for() -> Self {
+        write(MODIFY_OTHER_KEYS_OFF);
+        Self
+    }
+}
+
+impl Drop for PlainKeys {
+    fn drop(&mut self) {
+        write(MODIFY_OTHER_KEYS_RESET);
+    }
+}
+
+fn write(sequence: &str) {
+    let mut out = io::stdout();
+    let _ = out.write_all(sequence.as_bytes());
+    let _ = out.flush();
 }
 
 /// Runs a picker, treating a terminal that has stopped answering as a cancel.
