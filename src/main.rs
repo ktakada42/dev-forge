@@ -1,4 +1,5 @@
 mod banner;
+mod picker;
 mod repl;
 mod tools;
 
