@@ -93,7 +93,6 @@ type is converted:
 ? Select a tool  base64
 ? base64  encode
   Text to encode.
-  escapes            \n \t \r \0 \e \xNN \u{...}, and \\ for a backslash
   shift+enter        newline, without sending
   esc, ctrl-c        back to the tool list
   ctrl-d             quit
@@ -118,14 +117,6 @@ Either way the hint names the key that works where you are running, and pasting
 text that already has newlines in it works in any terminal. Tab types a tab,
 and spaces at either end of a line are part of the payload — what you see on
 the line is what gets converted.
-
-Text typed into an encoder is read the way a string literal is: `\n`, `\t`,
-`\r`, `\0`, `\e`, `\xNN` and `\u{...}` become the characters they name, and
-`\\` is a backslash. An escape nobody defined is an error rather than a guess,
-so `C:\Users` says so instead of quietly encoding something else. The decoders
-read what they are given as it is — base64, percent-encoded text and tokens
-have no backslashes in them — and the subcommands never interpret escapes, so
-a pipe stays byte for byte and the shell keeps its own `printf` and `$'...'`.
 
 ### Timestamp
 
