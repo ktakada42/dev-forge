@@ -93,6 +93,7 @@ type is converted:
 ? Select a tool  base64
 ? base64  encode
   Text to encode.
+  shift+enter        newline, without sending
   esc, ctrl-c        back to the tool list
   ctrl-d             quit
 
@@ -106,6 +107,11 @@ Nothing typed at that prompt is a command — a payload that reads like `exit` i
 encoded, not obeyed. Esc and ctrl-c go back to the tool list, ctrl-d quits, and
 Enter on an empty line does nothing. The keys mean the same thing at the prompt
 as they do in the lists.
+
+A payload can span lines: shift+enter starts another one instead of sending
+what is there. Telling shift+enter from enter needs the kitty keyboard
+protocol, which Ghostty, kitty, WezTerm and foot speak; where it is missing the
+hint names alt+enter, which every terminal can report.
 
 ### Timestamp
 

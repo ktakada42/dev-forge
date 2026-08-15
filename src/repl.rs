@@ -10,11 +10,16 @@
 //! is data. That is what a converter is for: paste, read, paste the next one.
 //! It also means nothing typed at the prompt is a command — Escape and Ctrl-C
 //! go back, Ctrl-D leaves — so a payload that happens to read like `exit` is
-//! encoded rather than obeyed.
+//! encoded rather than obeyed. A payload can span lines: Shift-Enter starts
+//! another one instead of sending what is there.
 
-use std::io::{self, Write};
+use std::borrow::Cow;
 
-use rustyline::{error::ReadlineError, Cmd, Config, DefaultEditor, KeyCode, KeyEvent, Modifiers};
+use reedline::{
+    default_emacs_keybindings, kitty_protocol_available, EditCommand, Emacs, KeyCode, KeyModifiers,
+    Keybindings, Prompt, PromptEditMode, PromptHistorySearch, PromptHistorySearchStatus, Reedline,
+    ReedlineEvent, Signal,
+};
 
 use crate::picker::{self, Item, Outcome};
 use crate::tools;
@@ -99,30 +104,17 @@ pub fn run() {
         std::process::exit(1);
     }
 
-    // Held for the whole session; see `PlainKeys`.
-    let _plain_keys = PlainKeys::ask_for();
+    // Asked once, before anything is drawn: the answer costs a round trip to
+    // the terminal, it decides which key the hints will name, and handing it
+    // to the line editor spares a second round trip — told `false`, the
+    // editor skips its own query rather than waiting again on a terminal that
+    // has already said nothing.
+    let kitty_protocol = kitty_protocol_available();
 
-    // Escape only ever arrives as the first byte of something: an arrow key
-    // is `ESC [ A`. Readline's emacs mode therefore waits forever for the
-    // rest, which is why an Escape on its own used to do nothing until the
-    // next keystroke — and then eat it. A timeout is what turns a lone
-    // Escape into a key of its own; 100ms is long enough for the rest of a
-    // real sequence to land and short enough to feel like a press.
-    let config = Config::builder().keyseq_timeout(Some(100)).build();
-    let mut rl = match DefaultEditor::with_config(config) {
-        Ok(rl) => rl,
-        Err(e) => {
-            eprintln!("Failed to initialize REPL: {}", e);
-            return;
-        }
-    };
-
-    // Escape means at the prompt what it meant in the list the prompt was
-    // reached through: back to the tool list. Left as readline found it, it
-    // is the meta prefix — nothing visible happens and the next keystroke is
-    // swallowed, which is the worst of both answers. `Interrupt` is the same
-    // door Ctrl-C uses, so the two keys agree.
-    rl.bind_sequence(KeyEvent(KeyCode::Esc, Modifiers::NONE), Cmd::Interrupt);
+    let mut editor = Reedline::create()
+        .with_edit_mode(Box::new(Emacs::new(keybindings())))
+        .use_kitty_keyboard_enhancement(kitty_protocol);
+    let newline_key = newline_key(kitty_protocol);
 
     crate::banner::animate();
     println!();
@@ -135,50 +127,42 @@ pub fn run() {
             continue;
         };
 
-        print_intro(mode);
-        if session(&mut rl, mode) == Flow::Exit {
+        print_intro(mode, newline_key);
+        if session(&mut editor, mode) == Flow::Exit {
             break;
         }
     }
 }
 
-/// Asks the terminal to report modified keys the plain way, and puts the
-/// setting back on the way out.
+/// What a line of input is edited with.
 ///
-/// Terminals that have xterm's "modify other keys" turned on spell Shift-Enter
-/// `ESC [ 27 ; 2 ; 13 ~`. Readline's parser walks into that sequence, gives up
-/// half way through it, and types what is left — `13~` — into the line, where
-/// it silently becomes part of the payload. The same is true of every other
-/// modified key the terminal decides to report.
-///
-/// dev-forge reads no key that this reporting is needed for: Ctrl-C, Ctrl-D
-/// and Escape all arrive as bytes of their own. So the reports are asked to
-/// stop for as long as the REPL runs, which leaves Shift-Enter arriving as a
-/// plain Enter — it submits the line, rather than corrupting it.
-struct PlainKeys;
-
-/// `CSI > 4 ; 0 m` — xterm's XTMODKEYS, "report other keys the old way".
-const MODIFY_OTHER_KEYS_OFF: &str = "\x1b[>4;0m";
-/// `CSI > 4 m` — the same setting, back to whatever the terminal had.
-const MODIFY_OTHER_KEYS_RESET: &str = "\x1b[>4m";
-
-impl PlainKeys {
-    fn ask_for() -> Self {
-        write(MODIFY_OTHER_KEYS_OFF);
-        Self
-    }
+/// Emacs keys, plus the two the rest of dev-forge already agreed on: Escape
+/// backs out, exactly as it does in the lists, and Shift-Enter starts another
+/// line instead of sending the one you are on.
+fn keybindings() -> Keybindings {
+    let mut keys = default_emacs_keybindings();
+    let newline = ReedlineEvent::Edit(vec![EditCommand::InsertNewline]);
+    keys.add_binding(KeyModifiers::SHIFT, KeyCode::Enter, newline.clone());
+    // Alt-Enter does the same job for terminals that cannot report Shift-Enter
+    // as distinct from Enter — see `newline_key`.
+    keys.add_binding(KeyModifiers::ALT, KeyCode::Enter, newline);
+    keys.add_binding(KeyModifiers::NONE, KeyCode::Esc, ReedlineEvent::CtrlC);
+    keys
 }
 
-impl Drop for PlainKeys {
-    fn drop(&mut self) {
-        write(MODIFY_OTHER_KEYS_RESET);
+/// The key the hints should name for "another line".
+///
+/// Shift-Enter is the key every chat box and editor uses, but a terminal can
+/// only report it as its own key under the kitty keyboard protocol — plain
+/// Enter and Shift-Enter are the same byte otherwise. Where that protocol is
+/// missing, Alt-Enter is the one that still arrives distinctly, so it is what
+/// gets named rather than promising a key that does nothing.
+fn newline_key(kitty_protocol: bool) -> &'static str {
+    if kitty_protocol {
+        "shift+enter"
+    } else {
+        "alt+enter"
     }
-}
-
-fn write(sequence: &str) {
-    let mut out = io::stdout();
-    let _ = out.write_all(sequence.as_bytes());
-    let _ = out.flush();
 }
 
 /// Runs a picker, treating a terminal that has stopped answering as a cancel.
@@ -214,14 +198,18 @@ fn direction(title: &str) -> Option<Direction> {
 }
 
 /// Reads lines and converts them until the user leaves the tool.
-fn session(rl: &mut DefaultEditor, mode: Mode) -> Flow {
+fn session(editor: &mut Reedline, mode: Mode) -> Flow {
+    let prompt = ForgePrompt(prompt(mode));
     loop {
-        let line = match rl.readline(&prompt(mode)) {
-            Ok(line) => line,
-            // Escape and Ctrl-C go back a screen; Ctrl-D is the one that
-            // leaves. Both are what every other REPL does with those keys.
-            Err(ReadlineError::Interrupted) => return Flow::Back,
-            Err(ReadlineError::Eof) => return Flow::Exit,
+        let line = match editor.read_line(&prompt) {
+            Ok(Signal::Success(line)) => line,
+            // Escape and Ctrl-C go back a screen; Ctrl-D — on an empty line,
+            // where it means end of input rather than "delete this character"
+            // — is the one that leaves. Both are what every other REPL does.
+            Ok(Signal::CtrlC) => return Flow::Back,
+            Ok(Signal::CtrlD) => return Flow::Exit,
+            // Nothing else is bound to produce a signal here.
+            Ok(_) => continue,
             Err(e) => {
                 eprintln!("Error: {}", e);
                 return Flow::Exit;
@@ -235,12 +223,48 @@ fn session(rl: &mut DefaultEditor, mode: Mode) -> Flow {
         if line.trim().is_empty() {
             continue;
         }
-        let _ = rl.add_history_entry(&line);
 
         match convert(mode, line.trim()) {
             Ok(result) => println!("{}", result),
             Err(e) => println!("Error: {}", e),
         }
+    }
+}
+
+/// The prompt, which is the whole of what dev-forge draws around the input.
+///
+/// Everything the line editor would add of its own — an indicator after the
+/// prompt, a marker down the left of a wrapped or multi-line entry — is left
+/// empty. A payload typed over two lines should look on screen like the two
+/// lines it is, so that it can be read back and copied out unchanged.
+struct ForgePrompt(String);
+
+impl Prompt for ForgePrompt {
+    fn render_prompt_left(&self) -> Cow<'_, str> {
+        Cow::Borrowed(&self.0)
+    }
+
+    fn render_prompt_right(&self) -> Cow<'_, str> {
+        Cow::Borrowed("")
+    }
+
+    fn render_prompt_indicator(&self, _mode: PromptEditMode) -> Cow<'_, str> {
+        Cow::Borrowed("")
+    }
+
+    fn render_prompt_multiline_indicator(&self) -> Cow<'_, str> {
+        Cow::Borrowed("")
+    }
+
+    fn render_prompt_history_search_indicator(
+        &self,
+        search: PromptHistorySearch,
+    ) -> Cow<'_, str> {
+        let failing = match search.status {
+            PromptHistorySearchStatus::Passing => "",
+            PromptHistorySearchStatus::Failing => "failing ",
+        };
+        Cow::Owned(format!("({}reverse-search: {}) ", failing, search.term))
     }
 }
 
@@ -283,14 +307,14 @@ fn convert(mode: Mode, input: &str) -> Result<String, String> {
 /// to be discovered first. The last lines are the way out, which is the one
 /// thing a prompt that treats everything as data has to spell out — no word
 /// typed here will do it.
-fn print_intro(mode: Mode) {
-    for line in intro(mode) {
+fn print_intro(mode: Mode, newline_key: &str) {
+    for line in intro(mode, newline_key) {
         println!("{}", dim(&line));
     }
     println!();
 }
 
-fn intro(mode: Mode) -> Vec<String> {
+fn intro(mode: Mode, newline_key: &str) -> Vec<String> {
     let mut lines: Vec<String> = match mode {
         Mode::Timestamp => vec![
             "  <timestamp> [tz]   seconds or milliseconds -> datetime".to_string(),
@@ -305,6 +329,7 @@ fn intro(mode: Mode) -> Vec<String> {
         Mode::Url(Direction::Decode) => vec!["  Percent-encoded text to decode.".to_string()],
         Mode::Jwt => vec!["  A JWT to decode. The signature is not verified.".to_string()],
     };
+    lines.push(format!("  {newline_key:<18} newline, without sending"));
     lines.push("  esc, ctrl-c        back to the tool list".to_string());
     lines.push("  ctrl-d             quit".to_string());
     lines
@@ -472,6 +497,24 @@ mod tests {
     }
 
     #[test]
+    fn the_hint_names_a_key_the_terminal_can_actually_report() {
+        // Shift-Enter is the key people reach for, but without the kitty
+        // protocol the terminal cannot tell it from Enter, so naming it would
+        // be promising something that does nothing.
+        assert_eq!(newline_key(true), "shift+enter");
+        assert_eq!(newline_key(false), "alt+enter");
+    }
+
+    #[test]
+    fn the_intro_names_the_key_that_starts_another_line() {
+        for (kitty, expected) in [(true, "shift+enter"), (false, "alt+enter")] {
+            let text = intro(Mode::Jwt, newline_key(kitty)).join("\n");
+            assert!(text.contains(expected), "{text}");
+            assert!(text.contains("newline"), "{text}");
+        }
+    }
+
+    #[test]
     fn every_tool_says_how_to_leave_it() {
         for mode in [
             Mode::Timestamp,
@@ -481,7 +524,7 @@ mod tests {
             Mode::Url(Direction::Decode),
             Mode::Jwt,
         ] {
-            let text = intro(mode).join("\n");
+            let text = intro(mode, "shift+enter").join("\n");
             assert!(text.contains("back to the tool list"), "{text}");
             assert!(text.contains("ctrl-d"), "{text}");
             // Escape and Ctrl-C do here what they did in the list, so both

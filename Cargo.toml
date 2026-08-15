@@ -9,7 +9,7 @@ path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
-rustyline = "14"
+reedline = "0.49"
 crossterm = "0.29"
 base64 = "0.22"
 urlencoding = "2"
