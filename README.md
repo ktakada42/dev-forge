@@ -93,7 +93,6 @@ type is converted:
 ? Select a tool  base64
 ? base64  encode
   Text to encode.
-  shift+enter        newline, without sending
   esc, ctrl-c        back to the tool list
   ctrl-d             quit
 

@@ -16,9 +16,8 @@
 use std::borrow::Cow;
 
 use reedline::{
-    default_emacs_keybindings, kitty_protocol_available, EditCommand, Emacs, KeyCode, KeyModifiers,
-    Keybindings, Prompt, PromptEditMode, PromptHistorySearch, PromptHistorySearchStatus, Reedline,
-    ReedlineEvent, Signal,
+    default_emacs_keybindings, EditCommand, Emacs, KeyCode, KeyModifiers, Keybindings, Prompt,
+    PromptEditMode, PromptHistorySearch, PromptHistorySearchStatus, Reedline, ReedlineEvent, Signal,
 };
 
 use crate::picker::{self, Item, Outcome};
@@ -104,17 +103,12 @@ pub fn run() {
         std::process::exit(1);
     }
 
-    // Asked once, before anything is drawn: the answer costs a round trip to
-    // the terminal, it decides which key the hints will name, and handing it
-    // to the line editor spares a second round trip — told `false`, the
-    // editor skips its own query rather than waiting again on a terminal that
-    // has already said nothing.
-    let kitty_protocol = kitty_protocol_available();
-
     let mut editor = Reedline::create()
         .with_edit_mode(Box::new(Emacs::new(keybindings())))
-        .use_kitty_keyboard_enhancement(kitty_protocol);
-    let newline_key = newline_key(kitty_protocol);
+        // Asked once by the editor itself, and cached: without the protocol a
+        // terminal cannot tell Shift-Enter from Enter, and the key that starts
+        // another line would be the key that sends the line.
+        .use_kitty_keyboard_enhancement(true);
 
     crate::banner::animate();
     println!();
@@ -127,7 +121,7 @@ pub fn run() {
             continue;
         };
 
-        print_intro(mode, newline_key);
+        print_intro(mode);
         if session(&mut editor, mode) == Flow::Exit {
             break;
         }
@@ -144,7 +138,7 @@ fn keybindings() -> Keybindings {
     let newline = ReedlineEvent::Edit(vec![EditCommand::InsertNewline]);
     keys.add_binding(KeyModifiers::SHIFT, KeyCode::Enter, newline.clone());
     // Alt-Enter does the same job for terminals that cannot report Shift-Enter
-    // as distinct from Enter — see `newline_key`.
+    // as distinct from Enter, which needs the kitty keyboard protocol.
     keys.add_binding(KeyModifiers::ALT, KeyCode::Enter, newline);
     keys.add_binding(KeyModifiers::NONE, KeyCode::Esc, ReedlineEvent::CtrlC);
     // Tab types a tab. The editor's own use for the key is to open a
@@ -157,21 +151,6 @@ fn keybindings() -> Keybindings {
         ReedlineEvent::Edit(vec![EditCommand::InsertChar('\t')]),
     );
     keys
-}
-
-/// The key the hints should name for "another line".
-///
-/// Shift-Enter is the key every chat box and editor uses, but a terminal can
-/// only report it as its own key under the kitty keyboard protocol — plain
-/// Enter and Shift-Enter are the same byte otherwise. Where that protocol is
-/// missing, Alt-Enter is the one that still arrives distinctly, so it is what
-/// gets named rather than promising a key that does nothing.
-fn newline_key(kitty_protocol: bool) -> &'static str {
-    if kitty_protocol {
-        "shift+enter"
-    } else {
-        "alt+enter"
-    }
 }
 
 /// Runs a picker, treating a terminal that has stopped answering as a cancel.
@@ -320,15 +299,27 @@ fn convert(mode: Mode, input: &str) -> Result<String, String> {
 /// to be discovered first. The last lines are the way out, which is the one
 /// thing a prompt that treats everything as data has to spell out — no word
 /// typed here will do it.
-fn print_intro(mode: Mode, newline_key: &str) {
-    for line in intro(mode, newline_key) {
-        println!("{}", dim(&line));
+fn print_intro(mode: Mode) {
+    // What the tool takes is the part worth reading, so it is the part that
+    // carries a colour; the keys under it are there to be found when looked
+    // for, not to compete with it.
+    for line in intro(mode) {
+        println!("{}", accent(&line));
+    }
+    for line in KEYS {
+        println!("{}", dim(line));
     }
     println!();
 }
 
-fn intro(mode: Mode, newline_key: &str) -> Vec<String> {
-    let mut lines: Vec<String> = match mode {
+/// The way out. Spelled out because no word typed at the prompt will do it.
+const KEYS: &[&str] = &[
+    "  esc, ctrl-c        back to the tool list",
+    "  ctrl-d             quit",
+];
+
+fn intro(mode: Mode) -> Vec<String> {
+    match mode {
         Mode::Timestamp => vec![
             "  <timestamp> [tz]   seconds or milliseconds -> datetime".to_string(),
             "  <datetime> [tz]    datetime -> Unix seconds".to_string(),
@@ -341,16 +332,22 @@ fn intro(mode: Mode, newline_key: &str) -> Vec<String> {
         Mode::Url(Direction::Encode) => vec!["  Text to percent-encode.".to_string()],
         Mode::Url(Direction::Decode) => vec!["  Percent-encoded text to decode.".to_string()],
         Mode::Jwt => vec!["  A JWT to decode. The signature is not verified.".to_string()],
-    };
-    lines.push(format!("  {newline_key:<18} newline, without sending"));
-    lines.push("  esc, ctrl-c        back to the tool list".to_string());
-    lines.push("  ctrl-d             quit".to_string());
-    lines
+    }
 }
 
 fn dim(line: &str) -> String {
+    paint("\x1b[2m", line)
+}
+
+/// The amber the sparks are struck in, borrowed from the banner so the two
+/// things dev-forge says in its own voice look like one voice.
+fn accent(line: &str) -> String {
+    paint("\x1b[38;5;214m", line)
+}
+
+fn paint(sequence: &str, line: &str) -> String {
     if crate::banner::use_color() {
-        format!("\x1b[2m{}\x1b[0m", line)
+        format!("{}{}\x1b[0m", sequence, line)
     } else {
         line.to_string()
     }
@@ -561,25 +558,7 @@ mod tests {
     }
 
     #[test]
-    fn the_hint_names_a_key_the_terminal_can_actually_report() {
-        // Shift-Enter is the key people reach for, but without the kitty
-        // protocol the terminal cannot tell it from Enter, so naming it would
-        // be promising something that does nothing.
-        assert_eq!(newline_key(true), "shift+enter");
-        assert_eq!(newline_key(false), "alt+enter");
-    }
-
-    #[test]
-    fn the_intro_names_the_key_that_starts_another_line() {
-        for (kitty, expected) in [(true, "shift+enter"), (false, "alt+enter")] {
-            let text = intro(Mode::Jwt, newline_key(kitty)).join("\n");
-            assert!(text.contains(expected), "{text}");
-            assert!(text.contains("newline"), "{text}");
-        }
-    }
-
-    #[test]
-    fn every_tool_says_how_to_leave_it() {
+    fn every_tool_says_what_it_takes() {
         for mode in [
             Mode::Timestamp,
             Mode::Base64(Direction::Encode),
@@ -588,12 +567,8 @@ mod tests {
             Mode::Url(Direction::Decode),
             Mode::Jwt,
         ] {
-            let text = intro(mode, "shift+enter").join("\n");
-            assert!(text.contains("back to the tool list"), "{text}");
-            assert!(text.contains("ctrl-d"), "{text}");
-            // Escape and Ctrl-C do here what they did in the list, so both
-            // are named rather than left to be discovered.
-            assert!(text.contains("esc, ctrl-c"), "{text}");
+            let text = intro(mode).join("\n");
+            assert!(!text.trim().is_empty(), "{mode:?}");
             // Plain ASCII: arrows and the like render inconsistently, and the
             // emoji-presentation ones are drawn double width.
             assert!(text.is_ascii(), "{text}");
@@ -601,9 +576,21 @@ mod tests {
     }
 
     #[test]
+    fn the_way_out_is_spelled_out_under_every_tool() {
+        let text = KEYS.join("\n");
+        assert!(text.contains("back to the tool list"), "{text}");
+        assert!(text.contains("ctrl-d"), "{text}");
+        // Escape and Ctrl-C do here what they did in the list, so both are
+        // named rather than left to be discovered.
+        assert!(text.contains("esc, ctrl-c"), "{text}");
+        assert!(text.is_ascii(), "{text}");
+    }
+
+    #[test]
     fn colors_are_dropped_when_they_are_not_wanted() {
         // NO_COLOR and a pipe both land here; the text survives either way.
-        let line = dim("hello");
-        assert!(line.contains("hello"));
+        for line in [dim("hello"), accent("hello")] {
+            assert!(line.contains("hello"));
+        }
     }
 }
