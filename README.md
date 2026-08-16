@@ -6,7 +6,7 @@
 [![GitHub release](https://img.shields.io/github/v/release/ktakada42/dev-forge)](https://github.com/ktakada42/dev-forge/releases/latest)
 [![License](https://img.shields.io/github/license/ktakada42/dev-forge)](LICENSE)
 
-![dev-forge startup animation](assets/demo.gif)
+![dev-forge picking a tool and encoding a string](assets/demo.gif)
 
 A developer's workshop for everyday transformations — an interactive CLI REPL for common encoding, decoding, and conversion tasks.
 
