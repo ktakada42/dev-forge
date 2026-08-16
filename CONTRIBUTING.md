@@ -134,6 +134,13 @@ git push origin v2.1.0
 Because the release notes are generated from commit subjects, the English rule
 above is what keeps them readable.
 
+The crates.io step authenticates with
+[trusted publishing](https://crates.io/docs/trusted-publishing): the job trades
+a GitHub OIDC token for a short-lived registry token, so there is no API token
+stored as a repository secret. crates.io grants that trade only to
+`release.yml` on this repository, which is why moving or renaming the workflow
+means updating the trusted publisher on the crate's settings page.
+
 ## License
 
 By contributing, you agree that your contributions are licensed under the
