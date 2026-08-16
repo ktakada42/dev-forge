@@ -481,7 +481,11 @@ fn dumb_terminal() -> bool {
     std::env::var("TERM").map(|t| t == "dumb").unwrap_or(false)
 }
 
-fn use_color() -> bool {
+/// Whether output should carry colors.
+///
+/// Shared with the rest of the REPL, so the banner, the picker and the hint
+/// lines all make the same call about a piped stdout or `NO_COLOR`.
+pub fn use_color() -> bool {
     io::stdout().is_terminal() && !env_set("NO_COLOR") && !dumb_terminal()
 }
 
