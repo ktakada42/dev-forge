@@ -339,10 +339,14 @@ fn dim(line: &str) -> String {
     paint("\x1b[2m", line)
 }
 
-/// The amber the sparks are struck in, borrowed from the banner so the two
-/// things dev-forge says in its own voice look like one voice.
+/// A muted tan — the amber of the banner's sparks, taken down to something
+/// that can sit on screen for a whole session.
+///
+/// The line only has to read as louder than the dim keys under it. The spark
+/// colour does that by shouting, which is right for two frames of an animation
+/// and wrong for text that stays there while you work.
 fn accent(line: &str) -> String {
-    paint("\x1b[38;5;214m", line)
+    paint("\x1b[38;5;180m", line)
 }
 
 fn paint(sequence: &str, line: &str) -> String {
