@@ -9,8 +9,40 @@ permissions:
   contents: write
 
 jobs:
+  # The tag is cut from a commit that already carries the release version, so a
+  # mismatch means the bump never landed on main. Fail here, before anything is
+  # published, rather than halfway through the release.
+  verify:
+    name: Verify tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      # shell: bash for pipefail — without it a cargo failure inside the
+      # command substitution is masked by jq's exit code, and the mismatch is
+      # reported with an empty version instead of cargo's own error.
+      - name: Check the tag against Cargo.toml
+        shell: bash
+        run: |
+          TAG="${{ github.ref_name }}"
+          EXPECTED="${TAG#v}"
+          # Resolving with --locked also fails when Cargo.lock is stale, which
+          # is what makes the --locked publish below safe. Leaving --no-deps off
+          # is deliberate: without a full resolve, a stale lock goes unnoticed.
+          ACTUAL=$(cargo metadata --format-version 1 --locked \
+            | jq -r '.packages[] | select(.name == "dev-forge") | .version')
+          if [[ "$ACTUAL" != "$EXPECTED" ]]; then
+            echo "::error::Cargo.toml is at ${ACTUAL} but the tag is ${TAG}. Bump the version on main first, then tag that commit."
+            exit 1
+          fi
+          echo "Cargo.toml and ${TAG} agree on ${ACTUAL}."
+
   build:
     name: Build ${{ matrix.target }}
+    needs: verify
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -95,54 +127,14 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Set version from tag
-        run: |
-          VER="${{ github.ref_name }}"
-          VER="${VER#v}"
-          sed -i "s/^version = \".*\"/version = \"${VER}\"/" Cargo.toml
-
       - name: Authenticate with crates.io
         id: auth
         uses: rust-lang/crates-io-auth-action@v1
 
-      # The tagged commit still carries the previous version — sync-version is
-      # what bumps Cargo.toml, and it only runs afterwards — so the version is
-      # taken from the tag above and the tree is dirty on purpose.
       - name: Publish
-        run: cargo publish --allow-dirty
+        run: cargo publish --locked
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
-
-  sync-version:
-    name: Sync Cargo.toml version
-    needs: release
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: main
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Bump Cargo.toml / Cargo.lock
-        run: |
-          VER="${{ github.ref_name }}"
-          VER="${VER#v}"
-          sed -i "s/^version = \".*\"/version = \"${VER}\"/" Cargo.toml
-          cargo check --quiet
-
-      - name: Commit and push
-        run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet -- Cargo.toml Cargo.lock; then
-            echo "Cargo.toml is already at ${{ github.ref_name }}, nothing to do."
-            exit 0
-          fi
-          git add Cargo.toml Cargo.lock
-          git commit -m "chore(release): ${{ github.ref_name }}"
-          git push origin HEAD:main
 
   update-homebrew:
     name: Update Homebrew Formula

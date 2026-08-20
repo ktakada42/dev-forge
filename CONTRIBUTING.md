@@ -109,6 +109,10 @@ they are.
 
 Keep one PR to one concern. Small and reviewable beats complete and enormous.
 
+`main` requires the `test` check to pass and the branch to be up to date before
+merging, so every change lands through a pull request. A direct push to `main`
+is rejected, because a fresh commit has no check result to show.
+
 ## Reporting bugs
 
 Open an [issue](https://github.com/ktakada42/dev-forge/issues) with:
@@ -119,17 +123,34 @@ Open an [issue](https://github.com/ktakada42/dev-forge/issues) with:
 
 ## Releases
 
-Maintainers only. Pushing a `v*` tag runs
-[`.github/workflows/release.yml`](.github/workflows/release.yml), which builds
-the macOS and Linux binaries, creates the GitHub release with generated notes,
-publishes the crate to [crates.io](https://crates.io/crates/dev-forge), updates
-the Homebrew formula in `ktakada42/homebrew-tap`, and commits the version bump
-back to `main`.
+Maintainers only. A release is two steps: land the version bump on `main`,
+then tag the commit that carries it.
 
-```sh
-git tag v2.1.0
-git push origin v2.1.0
-```
+1. Open a pull request that bumps the version:
+
+   ```sh
+   # edit `version` under [package] in Cargo.toml
+   cargo check        # updates Cargo.lock to match
+   ```
+
+2. Once it is merged, tag that commit:
+
+   ```sh
+   git switch main && git pull
+   git tag v2.1.0
+   git push origin v2.1.0
+   ```
+
+Pushing the tag runs
+[`.github/workflows/release.yml`](.github/workflows/release.yml), which checks
+that the tag and `Cargo.toml` agree, builds the macOS and Linux binaries,
+creates the GitHub release with generated notes, publishes the crate to
+[crates.io](https://crates.io/crates/dev-forge), and updates the Homebrew
+formula in `ktakada42/homebrew-tap`.
+
+If the tag and `Cargo.toml` disagree, or `Cargo.lock` is stale, the workflow
+stops before anything is built or published. Tagging is therefore safe to
+retry: delete the tag, land the bump, and tag again.
 
 Because the release notes are generated from commit subjects, the English rule
 above is what keeps them readable.
