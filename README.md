@@ -9,8 +9,11 @@
 
 ![dev-forge picking a tool and encoding a string](assets/demo.gif)
 
-A developer's workshop for everyday transformations — an interactive CLI REPL
-for common encoding, decoding, and conversion tasks.
+A developer's workshop for everyday transformations — an interactive, offline CLI
+REPL for common encoding, decoding, and conversion tasks.
+
+**100% local, zero network requests, zero logging.** Safe for sensitive tokens,
+JWTs, and payloads that should never leave your machine.
 
 Pick a tool from a list instead of remembering a command, then paste payload
 after payload. Nothing typed at the prompt is a command, so a payload that
