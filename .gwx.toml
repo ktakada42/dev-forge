@@ -1,0 +1,22 @@
+# gwx configuration for this repository, meant to be committed.
+# Where you like your worktrees is yours rather than the project's, so it goes
+# in ~/.config/gwx/config.toml; the two files combine per key.
+# Docs: https://github.com/ktakada42/gwx
+version = "1"
+
+# Download what the lockfile names, so the first `cargo test` in a new worktree
+# is not the one that discovers it needs the network. CI does the same thing
+# behind Swatinem/rust-cache.
+#
+# The download cache is shared between worktrees (~/.cargo), so this is close
+# to instant once one worktree has done it. Compilation is not shared: target/
+# belongs to the worktree, which is what keeps a build on one branch from
+# invalidating the one next door.
+[[hooks.post_create]]
+type = "command"
+command = "cargo fetch --locked"
+
+# There is no pre-commit hook to enable here. The sibling Rust CLI (gwx) keeps
+# one in .githooks/ that runs fmt, clippy and the tests before a commit; if one
+# is added here, turn it on from this file with:
+#   git config core.hooksPath .githooks
