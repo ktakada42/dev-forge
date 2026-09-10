@@ -1,5 +1,8 @@
 version: 2
 
+# Saturday 09:00 JST is the shared Dependabot window across dev-forge, gwx and
+# saitama-gomi-calendar, so a week's bumps land together and get reviewed in
+# one sitting instead of one repository at a time.
 updates:
   # Rust dependencies. Minor and patch bumps arrive as a single grouped PR;
   # major bumps stay separate so each one can be reviewed on its own.
@@ -7,7 +10,7 @@ updates:
     directory: /
     schedule:
       interval: weekly
-      day: monday
+      day: saturday
       time: "09:00"
       timezone: Asia/Tokyo
     open-pull-requests-limit: 5
@@ -25,7 +28,7 @@ updates:
     directory: /
     schedule:
       interval: weekly
-      day: monday
+      day: saturday
       time: "09:00"
       timezone: Asia/Tokyo
     open-pull-requests-limit: 5
