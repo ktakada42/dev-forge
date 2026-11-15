@@ -191,13 +191,7 @@ fn session(editor: &mut Reedline, mode: Mode) -> Flow {
     loop {
         let line = match editor.read_line(&prompt) {
             Ok(Signal::Success(line)) => line,
-            // Escape and Ctrl-C go back a screen; Ctrl-D — on an empty line,
-            // where it means end of input rather than "delete this character"
-            // — is the one that leaves. Both are what every other REPL does.
-            Ok(Signal::CtrlC) => return Flow::Back,
-            Ok(Signal::CtrlD) => return Flow::Exit,
-            // Nothing else is bound to produce a signal here.
-            Ok(_) => continue,
+            Ok(signal) => match on_signal(&signal) { Some(flow) => return flow, None => continue },
             Err(e) => {
                 eprintln!("Error: {}", e);
                 return Flow::Exit;
@@ -220,6 +214,20 @@ fn session(editor: &mut Reedline, mode: Mode) -> Flow {
             Ok(result) => println!("{}", result),
             Err(e) => println!("Error: {}", e),
         }
+    }
+}
+
+/// Maps a non-input signal from the line editor to the flow it triggers.
+///
+/// Escape and Ctrl-C go back a screen; Ctrl-D — on an empty line, where it
+/// means end of input rather than "delete this character" — is the one that
+/// leaves. Both are what every other REPL does.
+fn on_signal(signal: &Signal) -> Option<Flow> {
+    match signal {
+        Signal::CtrlC(_) => Some(Flow::Back),
+        Signal::CtrlD => Some(Flow::Exit),
+        // Nothing else is bound to produce a signal here.
+        _ => None,
     }
 }
 
@@ -596,5 +604,16 @@ mod tests {
         for line in [dim("hello"), accent("hello")] {
             assert!(line.contains("hello"));
         }
+    }
+
+    #[test]
+    fn ctrl_c_goes_back_and_ctrl_d_exits() {
+        assert_eq!(on_signal(&Signal::CtrlC(String::new())), Some(Flow::Back));
+        assert_eq!(
+            on_signal(&Signal::CtrlC("draft".to_string())),
+            Some(Flow::Back)
+        );
+        assert_eq!(on_signal(&Signal::CtrlD), Some(Flow::Exit));
+        assert_eq!(on_signal(&Signal::Success(String::new())), None);
     }
 }
